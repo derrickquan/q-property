@@ -344,8 +344,11 @@ function ContactForm() {
         });
 
         setSending(false);
-        setOk(res.ok);
-        if (res.ok) (e.currentTarget as HTMLFormElement).reset();
+if (res.ok) {
+  window.location.href = "/thank-you";
+} else {
+  setOk(false);
+}
       }}
     >
       <input type="text" name="company" className="hidden" tabIndex={-1} autoComplete="off" />
