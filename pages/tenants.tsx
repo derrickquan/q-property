@@ -405,3 +405,152 @@ function TenantFormModal({
             <div>
               <label className="block text-sm font-medium text-slate-700">Phone (optional)</label>
               <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                placeholder="(555) 123-4567"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Property Select (full width) */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700">Property</label>
+            <select
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              value={propertyId}
+              onChange={(e) => setPropertyId(e.target.value)}
+            >
+              {properties.length === 0 && <option value="">— No properties —</option>}
+              {properties.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} — {p.city}, {p.state}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Unit on its own line */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700">Unit (optional)</label>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="e.g., #3B or Suite 210"
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+            />
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Starting balance</label>
+              <input
+                type="number"
+                step="0.01"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                value={balance}
+                onChange={(e) => setBalance(parseFloat(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Notes (optional)</label>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                placeholder="internal note"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            className="rounded-lg bg-blue-600 text-white px-4 py-2 hover:bg-blue-700"
+          >
+            {initial ? "Save changes" : "Create tenant"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** =========================
+ *  Payment Modal
+ *  ========================= */
+function PaymentModal({
+  tenant,
+  onClose,
+  onRecord,
+}: {
+  tenant: Tenant;
+  onClose: () => void;
+  onRecord: (tenantId: string, amount: number) => void;
+}) {
+  const [amount, setAmount] = useState<number>(0);
+
+  function submit() {
+    if (!(amount > 0)) {
+      alert("Enter a positive payment amount.");
+      return;
+    }
+    onRecord(tenant.id, Math.round(amount * 100) / 100);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+          <h2 className="text-lg font-semibold">Record payment</h2>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-700">
+            Close
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          <div className="text-slate-700">
+            Tenant: <span className="font-medium">{tenant.name}</span>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700">Amount</label>
+            <input
+              type="number"
+              step="0.01"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => setAmount(parseFloat(e.target.value))}
+            />
+            <div className="text-xs text-slate-500 mt-1">
+              Current balance: ${Math.abs(tenant.balance ?? 0).toFixed(2)}
+              {(tenant.balance ?? 0) >= 0 ? "" : " CR"}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            className="rounded-lg bg-emerald-600 text-white px-4 py-2 hover:bg-emerald-700"
+          >
+            Record payment
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
