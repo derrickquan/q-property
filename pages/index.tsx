@@ -35,10 +35,10 @@ export default function Home() {
           </nav>
 
           <div className="flex items-center gap-2">
-            <a href="#pricing" className="px-4 py-2 rounded border border-slate-300 text-slate-900 hover:bg-slate-50">
+            <a href="#signup" className="px-4 py-2 rounded border border-slate-300 text-slate-900 hover:bg-slate-50">
               Sign in
             </a>
-            <a href="#pricing" className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
+            <a href="#signup" className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
               Start free
             </a>
           </div>
@@ -76,7 +76,7 @@ export default function Home() {
               </ul>
 
               <div className="flex flex-wrap gap-3 pt-3">
-                <a href="#pricing" className="px-5 py-3 rounded bg-blue-600 text-white hover:bg-blue-700">
+                <a href="#signup" className="px-5 py-3 rounded bg-blue-600 text-white hover:bg-blue-700">
                   Start free
                 </a>
                 <a href="#contact" className="px-5 py-3 rounded border border-slate-300 text-slate-900 hover:bg-slate-50">
@@ -117,30 +117,12 @@ export default function Home() {
             <div className="space-y-8">
               <h2 className="text-2xl font-semibold">What you get</h2>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                <FeatureCard
-                  title="Rent reminders"
-                  desc="Automatic email/SMS reminders prior to due dates."
-                />
-                <FeatureCard
-                  title="Owner alerts"
-                  desc="Instant notifications for missed or partial rent."
-                />
-                <FeatureCard
-                  title="Late-fee automation"
-                  desc="Flat or percentage-based fees applied automatically."
-                />
-                <FeatureCard
-                  title="Statements"
-                  desc="Auto-generated monthly owner statements."
-                />
-                <FeatureCard
-                  title="Residential & commercial"
-                  desc="Flexible fields and tracking for both unit types."
-                />
-                <FeatureCard
-                  title="Import/export"
-                  desc="Upload spreadsheets and export reports anytime."
-                />
+                <FeatureCard title="Rent reminders" desc="Automatic email/SMS reminders prior to due dates." />
+                <FeatureCard title="Owner alerts" desc="Instant notifications for missed or partial rent." />
+                <FeatureCard title="Late-fee automation" desc="Flat or percentage-based fees applied automatically." />
+                <FeatureCard title="Statements" desc="Auto-generated monthly owner statements." />
+                <FeatureCard title="Residential & commercial" desc="Flexible fields and tracking for both unit types." />
+                <FeatureCard title="Import/export" desc="Upload spreadsheets and export reports anytime." />
               </div>
             </div>
           </motion.div>
@@ -162,7 +144,7 @@ export default function Home() {
                 price="$0"
                 period="forever"
                 cta="Start free"
-                href="#contact"
+                href="#signup"
                 features={[
                   "Up to 2 units",
                   "Email & SMS reminders",
@@ -178,7 +160,7 @@ export default function Home() {
                 period="/mo"
                 sub="per owner"
                 cta="Get Pro"
-                href="#contact"
+                href="#signup"
                 features={[
                   "Up to 20 units",
                   "Everything in Starter",
@@ -206,8 +188,113 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Contact (placeholder anchor) */}
-      <div id="contact" />
+      {/* Signup (placeholder) */}
+      <section id="signup" className="py-16 border-t border-slate-200">
+        <div className="max-w-3xl mx-auto px-4">
+          <motion.div {...fadeUp}>
+            <div className="rounded-2xl border border-slate-200 p-6 shadow-sm bg-white">
+              <h2 className="text-2xl font-semibold">Create your account</h2>
+              <p className="text-slate-600 mt-2">
+                This is a placeholder. Hook this into your auth provider later.
+              </p>
+              <form
+                className="mt-6 grid gap-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const email = (e.currentTarget.elements.namedItem("email") as HTMLInputElement)?.value;
+                  alert(`Thanks! We’ll email signup details to: ${email}`);
+                }}
+              >
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  placeholder="you@company.com"
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex items-center gap-3">
+                  <button type="submit" className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+                    Start free
+                  </button>
+                  <a href="#contact" className="px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-50">
+                    Questions? Contact us
+                  </a>
+                </div>
+              </form>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Contact */}
+      <section id="contact" className="py-16 border-t border-slate-200 bg-slate-50">
+        <div className="max-w-3xl mx-auto px-4">
+          <motion.div {...fadeUp}>
+            <div className="rounded-2xl border border-slate-200 p-6 shadow-sm bg-white">
+              <h2 className="text-2xl font-semibold">Contact us</h2>
+              <p className="text-slate-600 mt-2">
+                Send a message and we’ll get back within one business day.
+              </p>
+
+              {/* mailto fallback: opens email client with prefilled subject/body */}
+              <form
+                className="mt-6 grid gap-4"
+                method="GET"
+                action="mailto:hello@example.com"
+                onSubmit={(e) => {
+                  // If you add a backend later, remove this to allow normal form submit.
+                  // This handler just constructs a mailto URL with the fields.
+                  e.preventDefault();
+                  const f = e.currentTarget as HTMLFormElement;
+                  const name = (f.elements.namedItem("name") as HTMLInputElement)?.value || "";
+                  const email = (f.elements.namedItem("email") as HTMLInputElement)?.value || "";
+                  const message = (f.elements.namedItem("message") as HTMLTextAreaElement)?.value || "";
+                  const subject = encodeURIComponent(`Q Property inquiry from ${name}`);
+                  const body = encodeURIComponent(`From: ${name} <${email}>\n\n${message}`);
+                  window.location.href = `mailto:hello@example.com?subject=${subject}&body=${body}`;
+                }}
+              >
+                <input
+                  type="text"
+                  name="name"
+                  required
+                  placeholder="Your name"
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  placeholder="you@company.com"
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <textarea
+                  name="message"
+                  required
+                  rows={5}
+                  placeholder="How can we help?"
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex items-center gap-3">
+                  <button type="submit" className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+                    Send message
+                  </button>
+                  <a
+                    href="mailto:hello@example.com"
+                    className="px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-50"
+                  >
+                    Email us directly
+                  </a>
+                </div>
+              </form>
+              <p className="text-xs text-slate-500 mt-3">
+                Tip: replace <code>hello@example.com</code> with your email now. Later, swap this
+                form to an API route or a form service (Formspree, GetForm, Basin, etc.).
+              </p>
+            </div>
+          </motion.div>
+        </div>
+      </section>
 
       {/* Footer */}
       <footer className="py-10 border-t border-slate-200">
