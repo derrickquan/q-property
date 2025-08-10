@@ -7,7 +7,12 @@ import { load, save } from "../lib/storage";
 /** ---------- typed table helpers (allow colSpan, title, etc.) ---------- */
 function Th(props: React.ThHTMLAttributes<HTMLTableCellElement>) {
   const { className = "", ...rest } = props;
-  return <th className={`text-left text-xs font-semibold uppercase tracking-wide text-slate-500 p-3 ${className}`} {...rest} />;
+  return (
+    <th
+      className={`text-left text-xs font-semibold uppercase tracking-wide text-slate-500 p-3 ${className}`}
+      {...rest}
+    />
+  );
 }
 function Td(props: React.TdHTMLAttributes<HTMLTableCellElement>) {
   const { className = "", ...rest } = props;
@@ -33,18 +38,20 @@ export default function LeasesPage() {
   }, []);
 
   const rows = useMemo(() => {
-    // decorate leases with tenant/property names
-    const byTenant = new Map(tenants.map(t => [t.id, t]));
-    const byProp = new Map(properties.map(p => [p.id, p]));
-    return leases
-      .map(l => {
+    const byTenant = new Map(tenants.map((t) => [t.id, t]));
+    const byProp = new Map(properties.map((p) => [p.id, p]));
+    return (leases ?? [])
+      .map((l) => {
         const t = byTenant.get(l.tenantId);
         const p = byProp.get(l.propertyId);
-        return {
-          ...l,
-          tenantName: t?.fullName ?? [t?.firstName, t?.lastName].filter(Boolean).join(" ") || "—",
-          propertyLabel: p ? `${p.name}${p.city ? ` — ${p.city}, ${p.state ?? ""}` : ""}` : "—`,
-        };
+        const tenantName =
+          t?.fullName ??
+          [t?.firstName, t?.lastName].filter(Boolean).join(" ") ||
+          "—";
+        const propertyLabel = p
+          ? `${p.name}${p.city ? ` — ${p.city}, ${p.state ?? ""}` : ""}`
+          : "—";
+        return { ...l, tenantName, propertyLabel };
       })
       .sort((a, b) => a.tenantName.localeCompare(b.tenantName));
   }, [leases, tenants, properties]);
@@ -60,10 +67,16 @@ export default function LeasesPage() {
       {/* Top nav */}
       <header className="sticky top-0 z-30 bg-white/70 backdrop-blur border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="font-semibold hover:opacity-80">Q Property</Link>
+          <Link href="/" className="font-semibold hover:opacity-80">
+            Q Property
+          </Link>
           <nav className="flex gap-6 text-slate-600">
-            <Link className="hover:text-slate-900" href="/properties">Properties</Link>
-            <Link className="hover:text-slate-900" href="/tenants">Tenants</Link>
+            <Link className="hover:text-slate-900" href="/properties">
+              Properties
+            </Link>
+            <Link className="hover:text-slate-900" href="/tenants">
+              Tenants
+            </Link>
             <span className="text-slate-900 font-medium">Leases</span>
           </nav>
           <div />
@@ -95,10 +108,12 @@ export default function LeasesPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
+              {rows.map((r) => (
                 <tr key={r.id} className="border-t border-slate-100">
                   <Td>{r.tenantName}</Td>
-                  <Td className="max-w-[260px] truncate" title={r.propertyLabel}>{r.propertyLabel}</Td>
+                  <Td className="max-w-[260px] truncate" title={r.propertyLabel}>
+                    {r.propertyLabel}
+                  </Td>
                   <Td className="text-right">${r.monthlyRent.toFixed(2)}</Td>
                   <Td className="text-center">{r.dueDay}</Td>
                   <Td>{r.startDate}</Td>
@@ -108,7 +123,9 @@ export default function LeasesPage() {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <Td colSpan={7} className="text-center text-slate-500">No leases yet.</Td>
+                  <Td colSpan={7} className="text-center text-slate-500">
+                    No leases yet.
+                  </Td>
                 </tr>
               )}
             </tbody>
@@ -121,7 +138,7 @@ export default function LeasesPage() {
           properties={properties}
           tenants={tenants}
           onClose={() => setShowCreate(false)}
-          onCreate={lease => {
+          onCreate={(lease) => {
             upsertLease(lease);
             setShowCreate(false);
           }}
@@ -178,20 +195,25 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
       endDate: endDate || undefined,
       graceDays,
       lateFeeType,
-      lateFeeValue: lateFeeType === "flat" ? Number(parseCurrency(lateFeeValue)) : Number(lateFeeValue),
+      lateFeeValue:
+        lateFeeType === "flat"
+          ? Number(parseCurrency(lateFeeValue))
+          : Number(lateFeeValue),
       notes: notes || undefined,
       status,
     };
     onCreate(lease);
   }
 
-  // prevent backdrop click from closing: we simply don’t attach any onClick to the backdrop
+  // no backdrop-click close: only buttons close
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/40">
       <div className="max-w-3xl w-[880px] bg-white rounded-2xl shadow-xl border border-slate-200">
         <div className="p-4 border-b border-slate-200 flex items-center justify-between">
           <div className="text-lg font-semibold">Add lease</div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-900">Close</button>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-900">
+            Close
+          </button>
         </div>
 
         <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -199,12 +221,14 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
           <Labeled label="Tenant">
             <select
               value={tenantId}
-              onChange={e => setTenantId(e.target.value)}
+              onChange={(e) => setTenantId(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
             >
               <option value="">— Select tenant —</option>
-              {tenants.map(t => {
-                const name = t.fullName ?? [t.firstName, t.lastName].filter(Boolean).join(" ");
+              {tenants.map((t) => {
+                const name =
+                  t.fullName ??
+                  [t.firstName, t.lastName].filter(Boolean).join(" ");
                 return (
                   <option key={t.id} value={t.id}>
                     {name || "(unnamed)"}
@@ -218,13 +242,14 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
           <Labeled label="Property">
             <select
               value={propertyId}
-              onChange={e => setPropertyId(e.target.value)}
+              onChange={(e) => setPropertyId(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
             >
               <option value="">— Select property —</option>
-              {properties.map(p => (
+              {properties.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}{p.city ? ` — ${p.city}, ${p.state ?? ""}` : ""}
+                  {p.name}
+                  {p.city ? ` — ${p.city}, ${p.state ?? ""}` : ""}
                 </option>
               ))}
             </select>
@@ -242,7 +267,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
               min={1}
               max={28}
               value={dueDay}
-              onChange={e => setDueDay(Number(e.target.value))}
+              onChange={(e) => setDueDay(Number(e.target.value))}
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </Labeled>
@@ -257,7 +282,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
             <input
               type="date"
               value={startDate}
-              onChange={e => setStartDate(e.target.value)}
+              onChange={(e) => setStartDate(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </Labeled>
@@ -265,7 +290,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
             <input
               type="date"
               value={endDate}
-              onChange={e => setEndDate(e.target.value)}
+              onChange={(e) => setEndDate(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </Labeled>
@@ -279,7 +304,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
               type="number"
               min={0}
               value={graceDays}
-              onChange={e => setGraceDays(Number(e.target.value))}
+              onChange={(e) => setGraceDays(Number(e.target.value))}
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </Labeled>
@@ -288,7 +313,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
             <Labeled label="Late fee type">
               <select
                 value={lateFeeType}
-                onChange={e => setLateFeeType(e.target.value as LateFeeType)}
+                onChange={(e) => setLateFeeType(e.target.value as LateFeeType)}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2"
               >
                 <option value="flat">Flat $</option>
@@ -298,7 +323,11 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
 
             <Labeled
               label="Late fee value"
-              hint={lateFeeType === "flat" ? "Charge a fixed late fee in dollars." : "Charge a % of the monthly rent."}
+              hint={
+                lateFeeType === "flat"
+                  ? "Charge a fixed late fee in dollars."
+                  : "Charge a % of the monthly rent."
+              }
             >
               {lateFeeType === "flat" ? (
                 <CurrencyInput value={lateFeeValue} onChange={setLateFeeValue} />
@@ -309,7 +338,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
                     min={0}
                     step="0.1"
                     value={lateFeeValue}
-                    onChange={e => setLateFeeValue(e.target.value)}
+                    onChange={(e) => setLateFeeValue(e.target.value)}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2"
                   />
                   <span className="ml-2 text-slate-500">%</span>
@@ -322,7 +351,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
           <Labeled label="Notes (optional)">
             <input
               value={notes}
-              onChange={e => setNotes(e.target.value)}
+              onChange={(e) => setNotes(e.target.value)}
               placeholder="e.g., pets allowed, parking, utilities"
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
             />
@@ -332,7 +361,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
           <Labeled label="Status">
             <select
               value={status}
-              onChange={e => setStatus(e.target.value as LeaseStatus)}
+              onChange={(e) => setStatus(e.target.value as LeaseStatus)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
             >
               <option value="active">Active</option>
@@ -353,7 +382,9 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
             <button
               onClick={submit}
               disabled={!canSubmit}
-              className={`px-4 py-2 rounded-lg text-white ${canSubmit ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-300 cursor-not-allowed"}`}
+              className={`px-4 py-2 rounded-lg text-white ${
+                canSubmit ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-300 cursor-not-allowed"
+              }`}
             >
               Create lease
             </button>
@@ -413,7 +444,6 @@ function today(): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 function sanitizeMoney(s: string): string {
-  // Keep digits and one dot; clamp to 2 decimals for display
   const cleaned = s.replace(/[^\d.]/g, "");
   const parts = cleaned.split(".");
   const left = parts[0] || "0";
