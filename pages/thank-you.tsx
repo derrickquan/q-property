@@ -9,9 +9,14 @@ export default function ThankYou() {
         <p className="text-lg text-slate-600">
           Your message has been sent successfully. We’ll get back to you within one business day.
         </p>
-        <Link href="/" className="px-5 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
-          Back to Home
-        </Link>
+        <div className="pt-4"> {/* Adds extra padding above the button */}
+          <Link
+            href="/"
+            className="px-5 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700 inline-block"
+          >
+            Back to Home
+          </Link>
+        </div>
       </div>
     </main>
   );
