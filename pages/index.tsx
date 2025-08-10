@@ -56,7 +56,7 @@ export default function Home() {
               </span>
 
               <h1 className="text-4xl md:text-6xl font-bold leading-tight">
-                Powerful Leasing Software for Independent Owners
+                Powerful Leasing Software for Independent Owners V3
               </h1>
 
               <p className="text-lg font-medium text-blue-600">
