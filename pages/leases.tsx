@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Property, Tenant, Lease, LateFeeType, LeaseStatus } from "../lib/types";
 import { load, save } from "../lib/storage";
 
-/** ---------- typed table helpers (allow colSpan, title, etc.) ---------- */
+/** ---------- table cells (typed so colSpan/title work) ---------- */
 function Th(props: React.ThHTMLAttributes<HTMLTableCellElement>) {
   const { className = "", ...rest } = props;
   return (
@@ -19,10 +19,51 @@ function Td(props: React.TdHTMLAttributes<HTMLTableCellElement>) {
   return <td className={`p-3 align-middle ${className}`} {...rest} />;
 }
 
-/** ---------- storage keys ---------- */
+/** ---------- keys ---------- */
 const K_PROPERTIES = "properties";
 const K_TENANTS = "tenants";
 const K_LEASES = "leases";
+
+/** ---------- helpers ---------- */
+function tenantDisplay(t?: Tenant): string {
+  if (!t) return "—";
+  const fromFull = (t.fullName || "").trim();
+  if (fromFull) return fromFull;
+  const parts = [t.firstName, t.lastName].filter(Boolean).join(" ").trim();
+  if (parts) return parts;
+  if (t.email?.trim()) return t.email.trim();
+  if (t.phone?.trim()) return t.phone.trim();
+  return "(unnamed)";
+}
+function propertyLabel(p?: Property): string {
+  if (!p) return "—";
+  const byName = (p.name || "").trim();
+  if (byName) return byName;
+  const byAddr = [p.address1, p.city, p.state].filter(Boolean).join(", ").trim();
+  if (byAddr) return byAddr;
+  return "(unnamed)";
+}
+function today(): string {
+  const d = new Date();
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+function sanitizeMoney(s: string): string {
+  const cleaned = s.replace(/[^\d.]/g, "");
+  const [l = "0", r = ""] = cleaned.split(".");
+  const left = `${Number(l)}`;
+  const right = r.slice(0, 2);
+  return right ? `${left}.${right}` : `${left}.00`.replace(/\.00$/, "");
+}
+function parseCurrency(s: string): number {
+  const n = Number(s.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+function isFiniteNum(s: string): boolean {
+  const n = Number(s);
+  return Number.isFinite(n);
+}
 
 /** ---------- page ---------- */
 export default function LeasesPage() {
@@ -44,16 +85,11 @@ export default function LeasesPage() {
       .map((l) => {
         const t = byTenant.get(l.tenantId);
         const p = byProp.get(l.propertyId);
-
-        const partsName = [t?.firstName, t?.lastName].filter(Boolean).join(" ");
-        const fullOrParts = (t?.fullName ?? partsName);
-        const tenantName = (fullOrParts && fullOrParts.trim().length > 0) ? fullOrParts : "—";
-
-        const propertyLabel = p
-          ? `${p.name}${p.city ? ` — ${p.city}, ${p.state ?? ""}` : ""}`
-          : "—";
-
-        return { ...l, tenantName, propertyLabel };
+        return {
+          ...l,
+          tenantName: tenantDisplay(t),
+          propertyText: propertyLabel(p),
+        };
       })
       .sort((a, b) => a.tenantName.localeCompare(b.tenantName));
   }, [leases, tenants, properties]);
@@ -69,16 +105,10 @@ export default function LeasesPage() {
       {/* Top nav */}
       <header className="sticky top-0 z-30 bg-white/70 backdrop-blur border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="font-semibold hover:opacity-80">
-            Q Property
-          </Link>
+          <Link href="/" className="font-semibold hover:opacity-80">Q Property</Link>
           <nav className="flex gap-6 text-slate-600">
-            <Link className="hover:text-slate-900" href="/properties">
-              Properties
-            </Link>
-            <Link className="hover:text-slate-900" href="/tenants">
-              Tenants
-            </Link>
+            <Link className="hover:text-slate-900" href="/properties">Properties</Link>
+            <Link className="hover:text-slate-900" href="/tenants">Tenants</Link>
             <span className="text-slate-900 font-medium">Leases</span>
           </nav>
           <div />
@@ -113,9 +143,7 @@ export default function LeasesPage() {
               {rows.map((r) => (
                 <tr key={r.id} className="border-t border-slate-100">
                   <Td>{r.tenantName}</Td>
-                  <Td className="max-w-[260px] truncate" title={r.propertyLabel}>
-                    {r.propertyLabel}
-                  </Td>
+                  <Td className="max-w-[260px] truncate" title={r.propertyText}>{r.propertyText}</Td>
                   <Td className="text-right">${r.monthlyRent.toFixed(2)}</Td>
                   <Td className="text-center">{r.dueDay}</Td>
                   <Td>{r.startDate}</Td>
@@ -150,7 +178,7 @@ export default function LeasesPage() {
   );
 }
 
-/** ---------- modal & form ---------- */
+/** ---------- create modal ---------- */
 
 type CreateProps = {
   properties: Property[];
@@ -173,6 +201,15 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
   const [lateFeeValue, setLateFeeValue] = useState<string>("0.00");
   const [status, setStatus] = useState<LeaseStatus>("active");
   const [notes, setNotes] = useState("");
+
+  const sortedTenants = useMemo(
+    () => [...tenants].sort((a, b) => tenantDisplay(a).localeCompare(tenantDisplay(b))),
+    [tenants]
+  );
+  const sortedProperties = useMemo(
+    () => [...properties].sort((a, b) => propertyLabel(a).localeCompare(propertyLabel(b))),
+    [properties]
+  );
 
   const canSubmit =
     tenantId &&
@@ -197,25 +234,20 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
       endDate: endDate || undefined,
       graceDays,
       lateFeeType,
-      lateFeeValue:
-        lateFeeType === "flat"
-          ? Number(parseCurrency(lateFeeValue))
-          : Number(lateFeeValue),
+      lateFeeValue: lateFeeType === "flat" ? Number(parseCurrency(lateFeeValue)) : Number(lateFeeValue),
       notes: notes || undefined,
       status,
     };
     onCreate(lease);
   }
 
-  // no backdrop-click close: only buttons close
+  // no backdrop-click close
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/40">
       <div className="max-w-3xl w-[880px] bg-white rounded-2xl shadow-xl border border-slate-200">
         <div className="p-4 border-b border-slate-200 flex items-center justify-between">
           <div className="text-lg font-semibold">Add lease</div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-900">
-            Close
-          </button>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-900">Close</button>
         </div>
 
         <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -227,16 +259,15 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
             >
               <option value="">— Select tenant —</option>
-              {tenants.map((t) => {
-                const parts = [t.firstName, t.lastName].filter(Boolean).join(" ");
-                const name = (t.fullName ?? parts) || "(unnamed)";
-                return (
-                  <option key={t.id} value={t.id}>
-                    {name}
-                  </option>
-                );
-              })}
+              {sortedTenants.map((t) => (
+                <option key={t.id} value={t.id}>{tenantDisplay(t)}</option>
+              ))}
             </select>
+            {sortedTenants.length === 0 && (
+              <div className="text-xs text-slate-500 mt-1">
+                No tenants yet. <Link className="underline hover:text-slate-900" href="/tenants">Add a tenant</Link>.
+              </div>
+            )}
           </Labeled>
 
           {/* Property */}
@@ -247,13 +278,15 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
             >
               <option value="">— Select property —</option>
-              {properties.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {p.city ? ` — ${p.city}, ${p.state ?? ""}` : ""}
-                </option>
+              {sortedProperties.map((p) => (
+                <option key={p.id} value={p.id}>{propertyLabel(p)}</option>
               ))}
             </select>
+            {sortedProperties.length === 0 && (
+              <div className="text-xs text-slate-500 mt-1">
+                No properties yet. <Link className="underline hover:text-slate-900" href="/properties">Add a property</Link>.
+              </div>
+            )}
           </Labeled>
 
           {/* Monthly rent */}
@@ -296,7 +329,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
             />
           </Labeled>
 
-          {/* Grace + Late fee (same row on md+) */}
+          {/* Grace + Late fee */}
           <Labeled
             label="Grace period (days)"
             hint="Extra days after the due date before the rent is considered late."
@@ -396,8 +429,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
   );
 }
 
-/** ---------- small UI helpers ---------- */
-
+/** ---------- small UI bits ---------- */
 function Labeled({
   label,
   hint,
@@ -435,27 +467,4 @@ function CurrencyInput({
       />
     </div>
   );
-}
-
-/** ---------- utils ---------- */
-function today(): string {
-  const d = new Date();
-  const m = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-function sanitizeMoney(s: string): string {
-  const cleaned = s.replace(/[^\d.]/g, "");
-  const parts = cleaned.split(".");
-  const left = parts[0] || "0";
-  const right = (parts[1] ?? "").slice(0, 2);
-  return right.length ? `${Number(left)}.${right}` : `${Number(left)}.00`.replace(/\.00$/, "");
-}
-function parseCurrency(s: string): number {
-  const n = Number(s.replace(/[^0-9.]/g, ""));
-  return isNaN(n) ? 0 : n;
-}
-function isFiniteNum(s: string): boolean {
-  const n = Number(s);
-  return Number.isFinite(n);
 }
