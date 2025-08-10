@@ -31,11 +31,14 @@ export default function Home() {
           </div>
 
 <nav className="hidden md:flex items-center gap-6 text-slate-600">
-  <a href="#features" className="hover:text-slate-900">Features</a>
-  <a href="#pricing" className="hover:text-slate-900">Pricing</a>
-  <a href="#contact" className="hover:text-slate-900">Contact</a>
-  <a href="/properties" className="hover:text-slate-900">Properties</a> {/* NEW */}
+  <a href="/properties" className="hover:text-slate-900">Properties</a>
+  <a href="/tenants" className="hover:text-slate-900">Tenants</a>
+  <a href="/leases" className="hover:text-slate-900">Leases</a>
+  <a href="/payments" className="hover:text-slate-900">Payments</a>
+  <a href="/reminders" className="hover:text-slate-900">Reminders</a>
+  <a href="/statements" className="hover:text-slate-900">Statements</a>
 </nav>
+
 
 
           <div className="flex items-center gap-2">
