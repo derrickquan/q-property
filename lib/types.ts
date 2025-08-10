@@ -1,4 +1,5 @@
 // lib/types.ts
+
 export type UnitType = "residential" | "commercial";
 
 export interface Property {
@@ -12,5 +13,17 @@ export interface Property {
   unitCount: number;
   type: UnitType;
   notes?: string;
-  // future: ownerId, createdAt, updatedAt
+}
+
+export interface Tenant {
+  id: string;
+  fullName: string;
+  email?: string;
+  phone?: string;
+  /** Foreign key to Property.id */
+  propertyId: string;
+  /** Optional unit identifier/number within the property */
+  unit?: string;
+  notes?: string;
+  createdAt: string; // ISO string
 }
