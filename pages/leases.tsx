@@ -216,7 +216,7 @@ export default function LeasesPage() {
         zip: "",
       });
     });
-    return [...map.values()];
+   return Array.from(map.values());
   }, [properties, tenants]);
 
   const filtered = useMemo(() => {
