@@ -1,730 +1,561 @@
-// pages/leases.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/router";
+import { load, save } from "../lib/storage";
+import type { Property, Tenant } from "../lib/types";
 
-/** ========= Local types (self-contained) ========= */
-type UnitType = "residential" | "commercial";
+/** ---------- Types ---------- */
+type LateFeeType = "flat" | "percent";
 
-type Property = {
-  id: string;
-  name: string;
-  address1: string;
-  city: string;
-  state: string;
-  zip: string;
-  unitCount?: number;
-  type?: UnitType;
-  notes?: string;
-};
-
-type Tenant = {
-  id: string;
-  name: string;
-  email?: string;
-  phone?: string;
-  propertyId?: string;
-  propertyName?: string;
-  unit?: string;
-  notes?: string;
-  balance?: number;
-};
-
-type LateFeeKind = "flat" | "percent";
 type LeaseStatus = "active" | "ended";
 
 type Lease = {
   id: string;
   tenantId: string;
   propertyId: string;
-  rent: number;
-  dueDay: number; // 1..28
-  frequency: "monthly";
-  startDate: string; // yyyy-mm-dd
-  endDate?: string;
-  deposit: number; // required; if blank we coerce to 0
-  graceDays?: number; // 0..10
-  lateFeeKind?: LateFeeKind;
-  lateFeeValue?: number; // flat $ or % based on kind
+
+  rentMonthly: number; // dollars.cents (e.g., 1234.56)
+  securityDeposit: number; // dollars.cents
+  dueDay: number; // 1-28
+  startDate: string; // ISO date
+  endDate?: string; // ISO date (optional)
+
+  graceDays: number; // days after due day before late
+  lateFeeType: LateFeeType;
+  lateFeeValue: number; // dollars or percent depending on type
+
   notes?: string;
   status: LeaseStatus;
-  createdAt: string;
-  updatedAt: string;
 };
 
-/** ========= Local storage helpers ========= */
-function load<T>(key: string, fallback: T): T {
-  try {
-    if (typeof window === "undefined") return fallback;
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-function save<T>(key: string, value: T) {
-  try {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore
-  }
+/** ---------- Storage keys ---------- */
+const K_PROPERTIES = "properties";
+const K_TENANTS = "tenants";
+const K_LEASES = "leases";
+
+/** ---------- Small UI helpers ---------- */
+function Label({ children }: { children: React.ReactNode }) {
+  return <label className="block text-sm font-medium text-slate-700">{children}</label>;
 }
 
-/** ========= Storage keys ========= */
-const PROPERTIES_KEY = "properties";
-const TENANTS_KEY = "tenants";
-const LEASES_KEY = "leases";
+function Help({ children }: { children: React.ReactNode }) {
+  return <p className="mt-1 text-xs text-slate-500">{children}</p>;
+}
 
-/** ========= Tiny UI helpers ========= */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="max-w-6xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-semibold mb-4">{title}</h1>
-      <div className="rounded-xl border border-slate-200 bg-white">{children}</div>
-    </section>
-  );
+function Field({ children }: { children: React.ReactNode }) {
+  return <div className="space-y-1">{children}</div>;
 }
-function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <th className={`text-left text-xs font-semibold uppercase tracking-wide text-slate-500 px-4 py-3 ${className}`}>
-      {children}
-    </th>
-  );
-}
-function Td({
-  children,
-  className = "",
-  colSpan,
+
+/** Currency input with $ prefix, stores as number (e.g. 1234.56) */
+function CurrencyInput({
+  value,
+  onChange,
+  placeholder = "$ 0",
+  required = false,
+  id,
 }: {
-  children: React.ReactNode;
-  className?: string;
-  colSpan?: number;
+  value: number;
+  onChange: (n: number) => void;
+  placeholder?: string;
+  required?: boolean;
+  id?: string;
 }) {
   return (
-    <td colSpan={colSpan} className={`px-4 py-3 align-top ${className}`}>
-      {children}
-    </td>
-  );
-}
-
-function InputWithPrefix({
-  prefix,
-  ...rest
-}: React.InputHTMLAttributes<HTMLInputElement> & { prefix: string }) {
-  return (
     <div className="relative">
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 select-none">{prefix}</span>
-      <input {...rest} className={`w-full rounded-lg border border-slate-300 pl-7 pr-3 py-2 ${rest.className || ""}`} />
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+      <input
+        id={id}
+        required={required}
+        type="text"
+        inputMode="decimal"
+        className="w-full rounded-md border border-slate-300 pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        placeholder={placeholder}
+        value={Number.isFinite(value) ? String(value) : ""}
+        onChange={(e) => {
+          const raw = e.target.value.replace(/[^\d.]/g, "");
+          const n = raw === "" ? 0 : Number(raw);
+          if (!Number.isNaN(n)) onChange(Number(n.toFixed(2)));
+        }}
+      />
     </div>
   );
 }
 
-function InputWithSuffix({
-  suffix,
-  ...rest
-}: React.InputHTMLAttributes<HTMLInputElement> & { suffix: string }) {
+/** Percentage input with % suffix */
+function PercentInput({
+  value,
+  onChange,
+  placeholder = "0",
+  id,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  placeholder?: string;
+  id?: string;
+}) {
   return (
     <div className="relative">
-      <input {...rest} className={`w-full rounded-lg border border-slate-300 pl-3 pr-8 py-2 ${rest.className || ""}`} />
-      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 select-none">{suffix}</span>
+      <input
+        id={id}
+        type="number"
+        inputMode="decimal"
+        min={0}
+        max={100}
+        step={0.1}
+        className="w-full rounded-md border border-slate-300 pr-7 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        placeholder={placeholder}
+        value={Number.isFinite(value) ? String(value) : ""}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          if (!Number.isNaN(n)) onChange(Number(n.toFixed(2)));
+        }}
+      />
+      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">%</span>
     </div>
   );
 }
 
-/** ========= Utilities ========= */
-function newId(prefix: string) {
-  return `${prefix}_${Math.random().toString(36).slice(2, 8)}_${Date.now().toString(36)}`;
-}
-function fmtMoney(n?: number) {
-  const v = Number.isFinite(n as number) ? (n as number) : 0;
-  return `$${v.toFixed(2)}`;
-}
-function fmtLateFee(kind?: LateFeeKind, val?: number) {
-  if (!kind || !Number.isFinite(val as number)) return "—";
-  return kind === "flat" ? fmtMoney(val) : `${val}%`;
-}
-function humanTerm(start: string, end?: string) {
-  if (!start) return "—";
-  const s = new Date(start).toLocaleDateString();
-  return end ? `${s} → ${new Date(end).toLocaleDateString()}` : `${s} → open`;
-}
-
-/** ========= Main Page ========= */
+/** ---------- Page ---------- */
 export default function LeasesPage() {
-  const router = useRouter();
-  const selectedTenantFromQuery = typeof router.query.tenant === "string" ? router.query.tenant : undefined;
+  /** Seed when empty so dropdowns have something the first time */
+  useEffect(() => {
+    const ps = load<Property[]>(K_PROPERTIES, []);
+    if (ps.length === 0) {
+      const seeded: Property[] = [
+        {
+          id: "mock1",
+          name: "Maplewood Apartments",
+          address1: "1234 Elm Street",
+          city: "Los Angeles",
+          state: "CA",
+          zip: "90001",
+          unitCount: 12,
+          type: "residential",
+        } as any,
+        {
+          id: "mock2",
+          name: "Suncrest Plaza Retail",
+          address1: "88 Market Street",
+          city: "San Diego",
+          state: "CA",
+          zip: "92101",
+          unitCount: 6,
+          type: "commercial",
+        } as any,
+      ];
+      save(K_PROPERTIES, seeded);
+    }
 
+    const ts = load<Tenant[]>(K_TENANTS, []);
+    if (ts.length === 0) {
+      const seededT: Tenant[] = [
+        {
+          id: "t1",
+          name: "Ava Johnson",
+          email: "ava@example.com",
+          phone: "(555) 111-2222",
+          propertyId: "mock1",
+          unit: "3B",
+          notes: "Good payer",
+        } as any,
+        {
+          id: "t2",
+          name: "Michael Chen",
+          email: "mchen@example.com",
+          phone: "(555) 333-4444",
+          propertyId: "mock2",
+          unit: "A1",
+        } as any,
+      ];
+      save(K_TENANTS, seededT);
+    }
+  }, []);
+
+  /** Data */
   const [properties, setProperties] = useState<Property[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [leases, setLeases] = useState<Lease[]>([]);
-  const [search, setSearch] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<Lease | null>(null);
 
-  // Load base data
   useEffect(() => {
-    setProperties(load<Property[]>(PROPERTIES_KEY, []));
-    setTenants(load<Tenant[]>(TENANTS_KEY, []));
-    setLeases(load<Lease[]>(LEASES_KEY, []));
+    setProperties(load<Property[]>(K_PROPERTIES, []));
+    setTenants(load<Tenant[]>(K_TENANTS, []));
+    setLeases(load<Lease[]>(K_LEASES, []));
   }, []);
 
-  // Persist leases
-  useEffect(() => {
-    save<Lease[]>(LEASES_KEY, leases);
-  }, [leases]);
+  /** Add Lease sheet/modal */
+  const [showAdd, setShowAdd] = useState(false);
 
-  const tenantById = useMemo(() => {
-    const m = new Map<string, Tenant>();
-    tenants.forEach((t) => m.set(t.id, t));
-    return m;
-  }, [tenants]);
+  // form state
+  const [tenantId, setTenantId] = useState<string>("");
+  const [propertyId, setPropertyId] = useState<string>("");
 
-  const propertyById = useMemo(() => {
-    const m = new Map<string, Property>();
-    properties.forEach((p) => m.set(p.id, p));
-    return m;
-  }, [properties]);
+  const [rentMonthly, setRentMonthly] = useState<number>(0);
+  const [deposit, setDeposit] = useState<number>(0);
+  const [dueDay, setDueDay] = useState<number>(1);
+  const [startDate, setStartDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState<string>("");
 
-  /** Populate property options:
-   *  - Prefer actual `properties`.
-   *  - If empty, derive unique properties from tenants' propertyId/propertyName.
-   */
-  const effectiveProperties: Property[] = useMemo(() => {
-    if (properties.length > 0) return properties;
-    const map = new Map<string, Property>();
-    tenants.forEach((t) => {
-      if (!t.propertyId) return;
-      const name = t.propertyName || `Property ${t.propertyId}`;
-      // Try to parse "Name — City, ST"
-      let city = "", state = "";
-      const parts = name.split("—");
-      if (parts.length === 2) {
-        const cs = parts[1].trim();
-        const comma = cs.lastIndexOf(",");
-        if (comma !== -1) {
-          city = cs.slice(0, comma).trim();
-          state = cs.slice(comma + 1).trim();
-        }
-      }
-      map.set(t.propertyId, {
-        id: t.propertyId,
-        name,
-        address1: "",
-        city,
-        state,
-        zip: "",
-      });
-    });
-   return Array.from(map.values());
-  }, [properties, tenants]);
+  const [graceDays, setGraceDays] = useState<number>(0);
+  const [lateType, setLateType] = useState<LateFeeType>("flat");
+  const [lateValue, setLateValue] = useState<number>(0);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return leases
-      .filter((l) => !selectedTenantFromQuery || l.tenantId === selectedTenantFromQuery)
-      .filter((l) => {
-        if (!q) return true;
-        const t = tenantById.get(l.tenantId);
-        const p = propertyById.get(l.propertyId) || effectiveProperties.find((ep) => ep.id === l.propertyId);
-        const hay = [
-          t?.name ?? "",
-          p?.name ?? "",
-          p ? `${p.city} ${p.state}` : "",
-          l.notes ?? "",
-        ]
-          .join(" ")
-          .toLowerCase();
-        return hay.includes(q);
-      })
-      .sort((a, b) => (tenantById.get(a.tenantId)?.name || "").localeCompare(tenantById.get(b.tenantId)?.name || ""));
-  }, [leases, tenantById, propertyById, effectiveProperties, search, selectedTenantFromQuery]);
+  const [notes, setNotes] = useState<string>("");
+  const [status, setStatus] = useState<LeaseStatus>("active");
 
-  function openCreate() {
-    const tenantId = selectedTenantFromQuery ?? tenants[0]?.id ?? "";
-    const t = tenantById.get(tenantId);
-    const propertyId =
-      (t?.propertyId as string) || effectiveProperties[0]?.id || properties[0]?.id || "";
+  /** Derived: options */
+  const propertyOptions = useMemo(() => properties, [properties]);
+  const tenantOptions = useMemo(() => tenants, [tenants]);
 
-    const now = new Date().toISOString().slice(0, 10); // yyyy-mm-dd
-    setEditing({
-      id: "",
+  /** Create lease */
+  function resetForm() {
+    setTenantId("");
+    setPropertyId("");
+    setRentMonthly(0);
+    setDeposit(0);
+    setDueDay(1);
+    setStartDate(new Date().toISOString().slice(0, 10));
+    setEndDate("");
+    setGraceDays(0);
+    setLateType("flat");
+    setLateValue(0);
+    setNotes("");
+    setStatus("active");
+  }
+
+  function handleCreateLease(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!tenantId || !propertyId) return;
+
+    const newLease: Lease = {
+      id: `lease_${Date.now()}`,
       tenantId,
       propertyId,
-      rent: 0,
-      dueDay: 1,
-      frequency: "monthly",
-      startDate: now,
-      endDate: undefined,
-      deposit: 0,
-      graceDays: 0,
-      lateFeeKind: "flat",
-      lateFeeValue: 0,
-      notes: "",
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
-    });
-    setShowForm(true);
-  }
-
-  function openEdit(l: Lease) {
-    setEditing({ ...l });
-    setShowForm(true);
-  }
-
-  function onDelete(id: string) {
-    if (!confirm("Delete this lease?")) return;
-    setLeases((prev) => prev.filter((l) => l.id !== id));
-  }
-
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!editing) return;
-
-    if (!editing.tenantId) return alert("Please select a tenant.");
-    if (!editing.propertyId) return alert("Please select a property.");
-    if (!Number.isFinite(editing.rent) || editing.rent <= 0) return alert("Rent must be greater than 0.");
-    if (!editing.dueDay || editing.dueDay < 1 || editing.dueDay > 28) return alert("Due day must be 1–28.");
-
-    // Deposit required; coerce to 0 if NaN/blank
-    if (!Number.isFinite(editing.deposit)) editing.deposit = 0;
-
-    // Constrain late fee input to chosen kind
-    if (editing.lateFeeKind === "percent") {
-      if (!Number.isFinite(editing.lateFeeValue)) editing.lateFeeValue = 0;
-      if ((editing.lateFeeValue as number) < 0) editing.lateFeeValue = 0;
-      if ((editing.lateFeeValue as number) > 100) editing.lateFeeValue = 100;
-    } else if (editing.lateFeeKind === "flat") {
-      if (!Number.isFinite(editing.lateFeeValue)) editing.lateFeeValue = 0;
-      if ((editing.lateFeeValue as number) < 0) editing.lateFeeValue = 0;
-    }
-
-    const now = new Date().toISOString();
-    const next: Lease = {
-      ...editing,
-      id: editing.id || newId("lease"),
-      updatedAt: now,
+      rentMonthly,
+      securityDeposit: deposit,
+      dueDay,
+      startDate,
+      endDate: endDate || undefined,
+      graceDays,
+      lateFeeType: lateType,
+      lateFeeValue: lateValue,
+      notes: notes || undefined,
+      status,
     };
 
-    setLeases((prev) => {
-      const exists = prev.some((l) => l.id === next.id);
-      return exists ? prev.map((l) => (l.id === next.id ? next : l)) : [next, ...prev];
-    });
+    const next = [newLease, ...leases];
+    setLeases(next);
+    save(K_LEASES, next);
 
-    setShowForm(false);
-    setEditing(null);
+    // close manually
+    setShowAdd(false);
+    resetForm();
   }
 
+  /** UI */
   return (
-    <main className="min-h-screen bg-white text-slate-900">
-      <Section title="Leases">
-        {/* Header row */}
-        <div className="p-4 border-b border-slate-200 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex-1">
-            {selectedTenantFromQuery ? (
-              <div className="text-sm">
-                Filtering by tenant:{" "}
-                <b>{tenantById.get(selectedTenantFromQuery)?.name ?? selectedTenantFromQuery}</b>{" "}
-                <button
-                  className="ml-2 text-blue-600 hover:underline"
-                  onClick={() => router.push("/leases")}
-                >
-                  Clear filter
-                </button>
-              </div>
-            ) : (
-              <p className="text-slate-600">
-                Create and manage lease terms that will power Statements and reminders.
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search tenant, property, notes…"
-              className="w-72 rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              onClick={openCreate}
-              className="rounded-lg bg-blue-600 text-white px-4 py-2 hover:bg-blue-700"
-            >
-              Add lease
-            </button>
-          </div>
+    <div className="min-h-screen bg-white text-slate-900">
+      {/* Nav */}
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur">
+        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
+          <Link href="/" className="font-semibold">Q Property</Link>
+          <nav className="flex items-center gap-6 text-slate-600">
+            <Link className="hover:text-slate-900" href="/properties">Properties</Link>
+            <Link className="hover:text-slate-900" href="/tenants">Tenants</Link>
+            <span className="text-slate-900 font-medium">Leases</span>
+          </nav>
+          <div />
         </div>
+      </header>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
-                <Th>Tenant</Th>
-                <Th>Property</Th>
-                <Th>Term</Th>
-                <Th>Rent / Due</Th>
-                <Th>Late fee</Th>
-                <Th>Status</Th>
-                <Th className="text-right pr-4">Actions</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <Td colSpan={7}>
-                    <div className="p-6 text-center text-slate-500">
-                      No leases yet. Click <b>Add lease</b> to create one.
-                    </div>
-                  </Td>
-                </tr>
-              ) : (
-                filtered.map((l) => {
-                  const t = tenantById.get(l.tenantId);
-                  const p =
-                    propertyById.get(l.propertyId) ||
-                    effectiveProperties.find((ep) => ep.id === l.propertyId);
-                  return (
-                    <tr key={l.id} className="border-b border-slate-100">
-                      <Td>
-                        <div className="font-medium">{t?.name ?? "—"}</div>
-                        <div className="text-xs text-slate-500">
-                          {t?.email ? t.email : t?.phone ? t.phone : "—"}
-                        </div>
-                      </Td>
-                      <Td>
-                        <div className="font-medium">{p?.name ?? "—"}</div>
-                        <div className="text-xs text-slate-500">
-                          {p ? `${p.city}, ${p.state}` : "—"}
-                        </div>
-                      </Td>
-                      <Td>
-                        <div>{humanTerm(l.startDate, l.endDate)}</div>
-                        <div className="text-xs text-slate-500">{l.frequency === "monthly" ? "Monthly" : ""}</div>
-                      </Td>
-                      <Td>
-                        <div className="font-medium">{fmtMoney(l.rent)}</div>
-                        <div className="text-xs text-slate-500">
-                          Due day {l.dueDay}
-                          {typeof l.graceDays === "number" && l.graceDays > 0 ? ` · ${l.graceDays}d grace` : ""}
-                        </div>
-                      </Td>
-                      <Td>
-                        <div>{fmtLateFee(l.lateFeeKind, l.lateFeeValue)}</div>
-                      </Td>
-                      <Td>
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${
-                            l.status === "active"
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              : "bg-slate-100 text-slate-700 border border-slate-200"
-                          }`}
-                        >
-                          {l.status}
-                        </span>
-                      </Td>
-                      <Td className="text-right pr-4">
-                        <div className="inline-flex items-center gap-2">
-                          <button
-                            onClick={() => openEdit(l)}
-                            className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => onDelete(l.id)}
-                            className="rounded border border-red-200 text-red-600 px-2 py-1 hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </Td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      {/* Drawer/Modal */}
-      {showForm && editing && (
-        <LeaseFormModal
-          tenants={tenants}
-          properties={effectiveProperties}
-          initial={editing}
-          onClose={() => {
-            setShowForm(false);
-            setEditing(null);
-          }}
-          onSubmit={onSubmit}
-          setEditing={setEditing}
-        />
-      )}
-    </main>
-  );
-}
-
-/** ========= Lease Form Modal ========= */
-function LeaseFormModal({
-  tenants,
-  properties,
-  initial,
-  onClose,
-  onSubmit,
-  setEditing,
-}: {
-  tenants: Tenant[];
-  properties: Property[];
-  initial: Lease;
-  onClose: () => void;
-  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
-  setEditing: React.Dispatch<React.SetStateAction<Lease | null>>;
-}) {
-  function update<K extends keyof Lease>(key: K, value: Lease[K]) {
-    setEditing((prev) => (prev ? { ...prev, [key]: value } : prev));
-  }
-
-  // Ensure the selected property exists in options; if not, default to first option.
-  React.useEffect(() => {
-    if (!properties.length) return;
-    if (!initial.propertyId || !properties.find((p) => p.id === initial.propertyId)) {
-      update("propertyId", properties[0].id as Lease["propertyId"]);
-    }
-  }, [properties]);
-
-  const lfKind = initial.lateFeeKind ?? "flat";
-  const lfVal = Number.isFinite(initial.lateFeeValue as number) ? (initial.lateFeeValue as number) : 0;
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/30 grid place-items-center p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-2xl rounded-xl bg-white shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
-          <h2 className="text-lg font-semibold">{initial.id ? "Edit lease" : "Add lease"}</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-700">
-            Close
+      <main className="mx-auto max-w-6xl px-4 py-8">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-semibold">Leases</h1>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="rounded-md bg-blue-600 text-white px-4 py-2 text-sm hover:bg-blue-700"
+          >
+            Add lease
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="px-5 py-4 grid gap-4">
-          {/* Tenant & Property */}
-          <div className="grid sm:grid-cols-2 gap-4">
-            <label className="grid gap-1">
-              <span className="text-sm">Tenant</span>
-              <select
-                value={initial.tenantId}
-                onChange={(e) => update("tenantId", e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              >
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="grid gap-1">
-              <span className="text-sm">Property</span>
-              <select
-                value={initial.propertyId}
-                onChange={(e) => update("propertyId", e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              >
-                {properties.length === 0 && <option value="">— No properties —</option>}
-                {properties.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} {p.city || p.state ? `— ${p.city}, ${p.state}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          {/* Rent / Due / Deposit */}
-          <div className="grid sm:grid-cols-3 gap-4">
-            <label className="grid gap-1">
-              <span className="text-sm">Monthly rent</span>
-              <InputWithPrefix
-                prefix="$"
-                inputMode="decimal"
-                type="number"
-                step="0.01"
-                value={initial.rent}
-                onChange={(e) => update("rent", parseFloat(e.target.value || "0"))}
-                required
-              />
-              <span className="text-xs text-slate-500">Enter dollars and cents.</span>
-            </label>
-
-            <label className="grid gap-1">
-              <span className="text-sm">Due day (1–28)</span>
-              <input
-                type="number"
-                min={1}
-                max={28}
-                value={initial.dueDay}
-                onChange={(e) => update("dueDay", parseInt(e.target.value || "1", 10))}
-                className="rounded-lg border border-slate-300 px-3 py-2"
-                required
-              />
-              <span className="text-xs text-slate-500">The calendar day rent is due each month.</span>
-            </label>
-
-            <label className="grid gap-1">
-              <span className="text-sm">Security deposit</span>
-              <InputWithPrefix
-                prefix="$"
-                inputMode="decimal"
-                type="number"
-                step="0.01"
-                value={initial.deposit ?? 0}
-                onChange={(e) => update("deposit", parseFloat(e.target.value || "0"))}
-                required
-              />
-              <span className="text-xs text-slate-500">Required. Use $0.00 if none.</span>
-            </label>
-          </div>
-
-          {/* Dates */}
-          <div className="grid sm:grid-cols-2 gap-4">
-            <label className="grid gap-1">
-              <span className="text-sm">Start date</span>
-              <input
-                type="date"
-                value={initial.startDate}
-                onChange={(e) => update("startDate", e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-2"
-                required
-              />
-            </label>
-
-            <label className="grid gap-1">
-              <span className="text-sm">End date (optional)</span>
-              <input
-                type="date"
-                value={initial.endDate ?? ""}
-                onChange={(e) => update("endDate", e.target.value || undefined)}
-                className="rounded-lg border border-slate-300 px-3 py-2"
-              />
-            </label>
-          </div>
-
-          {/* Grace & Late Fee */}
-          <div className="grid sm:grid-cols-3 gap-4">
-            <label className="grid gap-1">
-              <span className="text-sm">Grace period (days)</span>
-              <input
-                type="number"
-                min={0}
-                max={10}
-                value={initial.graceDays ?? 0}
-                onChange={(e) => update("graceDays", parseInt(e.target.value || "0", 10))}
-                className="rounded-lg border border-slate-300 px-3 py-2"
-              />
-              <span className="text-xs text-slate-500">
-                Extra days after the due date before the rent is considered late.
-              </span>
-            </label>
-
-            <label className="grid gap-1">
-              <span className="text-sm">Late fee type</span>
-              <select
-                value={lfKind}
-                onChange={(e) => update("lateFeeKind", e.target.value as LateFeeKind)}
-                className="rounded-lg border border-slate-300 px-3 py-2"
-              >
-                <option value="flat">Flat $</option>
-                <option value="percent">% of rent</option>
-              </select>
-            </label>
-
-            <label className="grid gap-1">
-              <span className="text-sm">Late fee value</span>
-              {lfKind === "flat" ? (
-                <InputWithPrefix
-                  prefix="$"
-                  inputMode="decimal"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={lfVal}
-                  onChange={(e) => update("lateFeeValue", parseFloat(e.target.value || "0"))}
-                />
-              ) : (
-                <InputWithSuffix
-                  suffix="%"
-                  inputMode="decimal"
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={100}
-                  value={lfVal}
-                  onChange={(e) => update("lateFeeValue", parseFloat(e.target.value || "0"))}
-                />
+        {/* Existing leases table (simple) */}
+        <div className="rounded-xl border border-slate-200 overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-slate-600">
+              <tr>
+                <th className="text-left p-3">Tenant</th>
+                <th className="text-left p-3">Property</th>
+                <th className="text-right p-3">Rent</th>
+                <th className="text-center p-3">Due</th>
+                <th className="text-left p-3">Dates</th>
+                <th className="text-center p-3">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leases.length === 0 && (
+                <tr>
+                  <td className="p-4 text-slate-500" colSpan={6}>
+                    No leases yet.
+                  </td>
+                </tr>
               )}
-              <span className="text-xs text-slate-500">
-                {lfKind === "flat"
-                  ? "Charge a fixed late fee in dollars."
-                  : "Charge a percentage of the monthly rent."}
-              </span>
-            </label>
-          </div>
+              {leases.map((l) => {
+                const t = tenants.find((x) => x.id === l.tenantId);
+                const p = properties.find((x) => x.id === l.propertyId);
+                return (
+                  <tr key={l.id} className="border-t border-slate-100">
+                    <td className="p-3">{t ? t.name : "—"}</td>
+                    <td className="p-3">
+                      {p ? `${p.name}${p.city ? ` — ${p.city}, ${p.state}` : ""}` : "—"}
+                    </td>
+                    <td className="p-3 text-right">${l.rentMonthly.toFixed(2)}</td>
+                    <td className="p-3 text-center">{l.dueDay}</td>
+                    <td className="p-3">
+                      {l.startDate}
+                      {l.endDate ? ` → ${l.endDate}` : ""}
+                    </td>
+                    <td className="p-3 text-center">
+                      <span
+                        className={
+                          l.status === "active"
+                            ? "inline-flex rounded-full bg-green-50 text-green-700 px-2 py-0.5"
+                            : "inline-flex rounded-full bg-slate-100 text-slate-700 px-2 py-0.5"
+                        }
+                      >
+                        {l.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </main>
 
-          {/* Notes & Status */}
-          <div className="grid sm:grid-cols-2 gap-4">
-            <label className="grid gap-1">
-              <span className="text-sm">Notes (optional)</span>
-              <input
-                value={initial.notes ?? ""}
-                onChange={(e) => update("notes", e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-2"
-                placeholder="e.g., pets allowed, parking, utilities"
-              />
-            </label>
-
-            <label className="grid gap-1">
-              <span className="text-sm">Status</span>
-              <select
-                value={initial.status}
-                onChange={(e) => update("status", e.target.value as LeaseStatus)}
-                className="rounded-lg border border-slate-300 px-3 py-2"
+      {/* Add Lease overlay — manual close only */}
+      {showAdd && (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/30 p-4">
+          {/* Clicks on the backdrop do nothing; only buttons close */}
+          <div className="relative w-full max-w-3xl rounded-xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 p-4">
+              <h2 className="text-lg font-semibold">Add lease</h2>
+              <button
+                className="text-slate-500 hover:text-slate-700"
+                onClick={() => setShowAdd(false)}
               >
-                <option value="active">Active</option>
-                <option value="ended">Ended</option>
-              </select>
-            </label>
-          </div>
+                Close
+              </button>
+            </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <Link
-              href="/tenants"
-              className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50"
+            <form
+              className="p-4 grid gap-5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleCreateLease();
+              }}
             >
-              Back to Tenants
-            </Link>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="rounded-lg bg-blue-600 text-white px-4 py-2 hover:bg-blue-700"
-            >
-              {initial.id ? "Save changes" : "Create lease"}
-            </button>
+              {/* Top selects */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <Field>
+                  <Label>Tenant</Label>
+                  <select
+                    required
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={tenantId}
+                    onChange={(e) => setTenantId(e.target.value)}
+                  >
+                    <option value="">— Select tenant —</option>
+                    {tenantOptions.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                        {t.unit ? ` — ${t.unit}` : ""}
+                        {t.propertyId
+                          ? (() => {
+                              const p = properties.find((x) => x.id === t.propertyId);
+                              return p ? ` @ ${p.name}` : "";
+                            })()
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field>
+                  <Label>Property</Label>
+                  <select
+                    required
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={propertyId}
+                    onChange={(e) => setPropertyId(e.target.value)}
+                  >
+                    <option value="">— Select property —</option>
+                    {propertyOptions.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {p.city ? ` — ${p.city}, ${p.state}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+
+              {/* Money / due row */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <Field>
+                  <Label>Monthly rent</Label>
+                  <CurrencyInput value={rentMonthly} onChange={setRentMonthly} placeholder="$ 0.00" />
+                  <Help>Enter dollars and cents.</Help>
+                </Field>
+
+                <Field>
+                  <Label>Due day (1–28)</Label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={28}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={dueDay}
+                    onChange={(e) => setDueDay(Math.min(28, Math.max(1, Number(e.target.value) || 1)))}
+                  />
+                  <Help>The calendar day rent is due each month.</Help>
+                </Field>
+
+                <Field>
+                  <Label>Security deposit</Label>
+                  <CurrencyInput
+                    value={deposit}
+                    onChange={setDeposit}
+                    placeholder="$ 0.00"
+                    required
+                  />
+                  <Help>Required. Use $0.00 if none.</Help>
+                </Field>
+              </div>
+
+              {/* Dates */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <Field>
+                  <Label>Start date</Label>
+                  <input
+                    type="date"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <Label>End date (optional)</Label>
+                  <input
+                    type="date"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
+                </Field>
+              </div>
+
+              {/* Grace + Late fee (same row) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <Field>
+                  <Label>Grace period (days)</Label>
+                  <input
+                    type="number"
+                    min={0}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={graceDays}
+                    onChange={(e) => setGraceDays(Math.max(0, Number(e.target.value) || 0))}
+                  />
+                  <Help>Extra days after the due date before the rent is considered late.</Help>
+                </Field>
+
+                <Field>
+                  <Label>Late fee type</Label>
+                  <select
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={lateType}
+                    onChange={(e) => {
+                      const next = e.target.value as LateFeeType;
+                      setLateType(next);
+                      // keep value safe if switching to percent
+                      if (next === "percent") setLateValue(Math.min(100, Math.max(0, lateValue)));
+                    }}
+                  >
+                    <option value="flat">Flat $</option>
+                    <option value="percent">Percent %</option>
+                  </select>
+                </Field>
+
+                <Field>
+                  <Label>Late fee value</Label>
+                  {lateType === "flat" ? (
+                    <>
+                      <CurrencyInput value={lateValue} onChange={setLateValue} placeholder="$ 0.00" />
+                      <Help>Charge a fixed late fee in dollars.</Help>
+                    </>
+                  ) : (
+                    <>
+                      <PercentInput value={lateValue} onChange={setLateValue} />
+                      <Help>Charge a percentage of monthly rent (0–100%).</Help>
+                    </>
+                  )}
+                </Field>
+              </div>
+
+              {/* Notes + Status */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <Field>
+                  <Label>Notes (optional)</Label>
+                  <input
+                    type="text"
+                    placeholder="e.g., pets allowed, parking, utilities"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <Label>Status</Label>
+                  <select
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as LeaseStatus)}
+                  >
+                    <option value="active">Active</option>
+                    <option value="ended">Ended</option>
+                  </select>
+                </Field>
+              </div>
+
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <Link
+                  href="/tenants"
+                  className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+                >
+                  Back to Tenants
+                </Link>
+
+                <div className="ml-auto flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdd(false); // manual close
+                    }}
+                    className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-md bg-blue-600 text-white px-4 py-2 text-sm hover:bg-blue-700"
+                  >
+                    Create lease
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
-        </form>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
