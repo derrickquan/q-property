@@ -7,7 +7,7 @@ import {
 // Keyhole / doorway logo
 function QLogo({ size = 36 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" aria-label="Q Property logo">
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-label="Q Property • v2 logo">
       <defs>
         <linearGradient id="qg" x1="0" x2="1" y1="0" y2="1">
           <stop offset="0%" stopColor="#2563eb" />
