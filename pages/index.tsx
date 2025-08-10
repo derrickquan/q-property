@@ -121,11 +121,7 @@ export default function Home() {
           </div></div>
 
           {/* KPI Card */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.1 }}
-          >
+          <div>
             <div className="shadow-xl rounded-2xl border border-slate-200">
               <div className="p-6">
                 <h3 className="text-lg font-semibold">Collections & Occupancy</h3>
@@ -154,7 +150,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </motion.div>
+          </div>
         </div>
       </section>
 
