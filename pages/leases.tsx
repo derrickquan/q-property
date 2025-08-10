@@ -38,18 +38,18 @@ type Lease = {
   tenantId: string;
   propertyId: string;
   rent: number;
-  dueDay: number; // 1..28 (keep simple for months)
+  dueDay: number; // 1..28
   frequency: "monthly";
-  startDate: string; // ISO yyyy-mm-dd
-  endDate?: string;  // ISO or undefined
-  deposit?: number;
+  startDate: string; // yyyy-mm-dd
+  endDate?: string;
+  deposit: number; // required; if blank we coerce to 0
   graceDays?: number; // 0..10
   lateFeeKind?: LateFeeKind;
   lateFeeValue?: number; // flat $ or % based on kind
   notes?: string;
   status: LeaseStatus;
-  createdAt: string; // ISO
-  updatedAt: string; // ISO
+  createdAt: string;
+  updatedAt: string;
 };
 
 /** ========= Local storage helpers ========= */
@@ -71,7 +71,7 @@ function save<T>(key: string, value: T) {
   }
 }
 
-/** ========= Storage keys (match your app) ========= */
+/** ========= Storage keys ========= */
 const PROPERTIES_KEY = "properties";
 const TENANTS_KEY = "tenants";
 const LEASES_KEY = "leases";
@@ -92,11 +92,43 @@ function Th({ children, className = "" }: { children: React.ReactNode; className
     </th>
   );
 }
-function Td({ children, className = "", colSpan }: { children: React.ReactNode; className?: string; colSpan?: number }) {
+function Td({
+  children,
+  className = "",
+  colSpan,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  colSpan?: number;
+}) {
   return (
     <td colSpan={colSpan} className={`px-4 py-3 align-top ${className}`}>
       {children}
     </td>
+  );
+}
+
+function InputWithPrefix({
+  prefix,
+  ...rest
+}: React.InputHTMLAttributes<HTMLInputElement> & { prefix: string }) {
+  return (
+    <div className="relative">
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 select-none">{prefix}</span>
+      <input {...rest} className={`w-full rounded-lg border border-slate-300 pl-7 pr-3 py-2 ${rest.className || ""}`} />
+    </div>
+  );
+}
+
+function InputWithSuffix({
+  suffix,
+  ...rest
+}: React.InputHTMLAttributes<HTMLInputElement> & { suffix: string }) {
+  return (
+    <div className="relative">
+      <input {...rest} className={`w-full rounded-lg border border-slate-300 pl-3 pr-8 py-2 ${rest.className || ""}`} />
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 select-none">{suffix}</span>
+    </div>
   );
 }
 
@@ -154,6 +186,39 @@ export default function LeasesPage() {
     return m;
   }, [properties]);
 
+  /** Populate property options:
+   *  - Prefer actual `properties`.
+   *  - If empty, derive unique properties from tenants' propertyId/propertyName.
+   */
+  const effectiveProperties: Property[] = useMemo(() => {
+    if (properties.length > 0) return properties;
+    const map = new Map<string, Property>();
+    tenants.forEach((t) => {
+      if (!t.propertyId) return;
+      const name = t.propertyName || `Property ${t.propertyId}`;
+      // Try to parse "Name — City, ST"
+      let city = "", state = "";
+      const parts = name.split("—");
+      if (parts.length === 2) {
+        const cs = parts[1].trim();
+        const comma = cs.lastIndexOf(",");
+        if (comma !== -1) {
+          city = cs.slice(0, comma).trim();
+          state = cs.slice(comma + 1).trim();
+        }
+      }
+      map.set(t.propertyId, {
+        id: t.propertyId,
+        name,
+        address1: "",
+        city,
+        state,
+        zip: "",
+      });
+    });
+    return [...map.values()];
+  }, [properties, tenants]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return leases
@@ -161,7 +226,7 @@ export default function LeasesPage() {
       .filter((l) => {
         if (!q) return true;
         const t = tenantById.get(l.tenantId);
-        const p = propertyById.get(l.propertyId);
+        const p = propertyById.get(l.propertyId) || effectiveProperties.find((ep) => ep.id === l.propertyId);
         const hay = [
           t?.name ?? "",
           p?.name ?? "",
@@ -173,13 +238,14 @@ export default function LeasesPage() {
         return hay.includes(q);
       })
       .sort((a, b) => (tenantById.get(a.tenantId)?.name || "").localeCompare(tenantById.get(b.tenantId)?.name || ""));
-  }, [leases, tenantById, propertyById, search, selectedTenantFromQuery]);
+  }, [leases, tenantById, propertyById, effectiveProperties, search, selectedTenantFromQuery]);
 
   function openCreate() {
-    // Preselect tenant (if coming from Tenants page), and that tenant's property if available
     const tenantId = selectedTenantFromQuery ?? tenants[0]?.id ?? "";
     const t = tenantById.get(tenantId);
-    const propertyId = (t?.propertyId as string) || properties[0]?.id || "";
+    const propertyId =
+      (t?.propertyId as string) || effectiveProperties[0]?.id || properties[0]?.id || "";
+
     const now = new Date().toISOString().slice(0, 10); // yyyy-mm-dd
     setEditing({
       id: "",
@@ -221,6 +287,19 @@ export default function LeasesPage() {
     if (!Number.isFinite(editing.rent) || editing.rent <= 0) return alert("Rent must be greater than 0.");
     if (!editing.dueDay || editing.dueDay < 1 || editing.dueDay > 28) return alert("Due day must be 1–28.");
 
+    // Deposit required; coerce to 0 if NaN/blank
+    if (!Number.isFinite(editing.deposit)) editing.deposit = 0;
+
+    // Constrain late fee input to chosen kind
+    if (editing.lateFeeKind === "percent") {
+      if (!Number.isFinite(editing.lateFeeValue)) editing.lateFeeValue = 0;
+      if ((editing.lateFeeValue as number) < 0) editing.lateFeeValue = 0;
+      if ((editing.lateFeeValue as number) > 100) editing.lateFeeValue = 100;
+    } else if (editing.lateFeeKind === "flat") {
+      if (!Number.isFinite(editing.lateFeeValue)) editing.lateFeeValue = 0;
+      if ((editing.lateFeeValue as number) < 0) editing.lateFeeValue = 0;
+    }
+
     const now = new Date().toISOString();
     const next: Lease = {
       ...editing,
@@ -256,7 +335,7 @@ export default function LeasesPage() {
               </div>
             ) : (
               <p className="text-slate-600">
-                Create and manage lease terms that will later power Statements and reminders.
+                Create and manage lease terms that will power Statements and reminders.
               </p>
             )}
           </div>
@@ -302,7 +381,9 @@ export default function LeasesPage() {
               ) : (
                 filtered.map((l) => {
                   const t = tenantById.get(l.tenantId);
-                  const p = propertyById.get(l.propertyId);
+                  const p =
+                    propertyById.get(l.propertyId) ||
+                    effectiveProperties.find((ep) => ep.id === l.propertyId);
                   return (
                     <tr key={l.id} className="border-b border-slate-100">
                       <Td>
@@ -325,7 +406,7 @@ export default function LeasesPage() {
                         <div className="font-medium">{fmtMoney(l.rent)}</div>
                         <div className="text-xs text-slate-500">
                           Due day {l.dueDay}
-                          {l.graceDays ? ` · ${l.graceDays}d grace` : ""}
+                          {typeof l.graceDays === "number" && l.graceDays > 0 ? ` · ${l.graceDays}d grace` : ""}
                         </div>
                       </Td>
                       <Td>
@@ -371,7 +452,7 @@ export default function LeasesPage() {
       {showForm && editing && (
         <LeaseFormModal
           tenants={tenants}
-          properties={properties}
+          properties={effectiveProperties}
           initial={editing}
           onClose={() => {
             setShowForm(false);
@@ -404,6 +485,17 @@ function LeaseFormModal({
   function update<K extends keyof Lease>(key: K, value: Lease[K]) {
     setEditing((prev) => (prev ? { ...prev, [key]: value } : prev));
   }
+
+  // Ensure the selected property exists in options; if not, default to first option.
+  React.useEffect(() => {
+    if (!properties.length) return;
+    if (!initial.propertyId || !properties.find((p) => p.id === initial.propertyId)) {
+      update("propertyId", properties[0].id as Lease["propertyId"]);
+    }
+  }, [properties]);
+
+  const lfKind = initial.lateFeeKind ?? "flat";
+  const lfVal = Number.isFinite(initial.lateFeeValue as number) ? (initial.lateFeeValue as number) : 0;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/30 grid place-items-center p-4" onClick={onClose}>
@@ -445,27 +537,30 @@ function LeaseFormModal({
                 className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
                 required
               >
+                {properties.length === 0 && <option value="">— No properties —</option>}
                 {properties.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} — {p.city}, {p.state}
+                    {p.name} {p.city || p.state ? `— ${p.city}, ${p.state}` : ""}
                   </option>
                 ))}
               </select>
             </label>
           </div>
 
-          {/* Rent/Due/Deposit */}
+          {/* Rent / Due / Deposit */}
           <div className="grid sm:grid-cols-3 gap-4">
             <label className="grid gap-1">
               <span className="text-sm">Monthly rent</span>
-              <input
+              <InputWithPrefix
+                prefix="$"
+                inputMode="decimal"
                 type="number"
                 step="0.01"
                 value={initial.rent}
                 onChange={(e) => update("rent", parseFloat(e.target.value || "0"))}
-                className="rounded-lg border border-slate-300 px-3 py-2"
                 required
               />
+              <span className="text-xs text-slate-500">Enter dollars and cents.</span>
             </label>
 
             <label className="grid gap-1">
@@ -479,17 +574,21 @@ function LeaseFormModal({
                 className="rounded-lg border border-slate-300 px-3 py-2"
                 required
               />
+              <span className="text-xs text-slate-500">The calendar day rent is due each month.</span>
             </label>
 
             <label className="grid gap-1">
-              <span className="text-sm">Security deposit (optional)</span>
-              <input
+              <span className="text-sm">Security deposit</span>
+              <InputWithPrefix
+                prefix="$"
+                inputMode="decimal"
                 type="number"
                 step="0.01"
                 value={initial.deposit ?? 0}
                 onChange={(e) => update("deposit", parseFloat(e.target.value || "0"))}
-                className="rounded-lg border border-slate-300 px-3 py-2"
+                required
               />
+              <span className="text-xs text-slate-500">Required. Use $0.00 if none.</span>
             </label>
           </div>
 
@@ -520,7 +619,7 @@ function LeaseFormModal({
           {/* Grace & Late Fee */}
           <div className="grid sm:grid-cols-3 gap-4">
             <label className="grid gap-1">
-              <span className="text-sm">Grace days</span>
+              <span className="text-sm">Grace period (days)</span>
               <input
                 type="number"
                 min={0}
@@ -529,12 +628,15 @@ function LeaseFormModal({
                 onChange={(e) => update("graceDays", parseInt(e.target.value || "0", 10))}
                 className="rounded-lg border border-slate-300 px-3 py-2"
               />
+              <span className="text-xs text-slate-500">
+                Extra days after the due date before the rent is considered late.
+              </span>
             </label>
 
             <label className="grid gap-1">
               <span className="text-sm">Late fee type</span>
               <select
-                value={initial.lateFeeKind ?? "flat"}
+                value={lfKind}
                 onChange={(e) => update("lateFeeKind", e.target.value as LateFeeKind)}
                 className="rounded-lg border border-slate-300 px-3 py-2"
               >
@@ -545,13 +647,33 @@ function LeaseFormModal({
 
             <label className="grid gap-1">
               <span className="text-sm">Late fee value</span>
-              <input
-                type="number"
-                step="0.01"
-                value={initial.lateFeeValue ?? 0}
-                onChange={(e) => update("lateFeeValue", parseFloat(e.target.value || "0"))}
-                className="rounded-lg border border-slate-300 px-3 py-2"
-              />
+              {lfKind === "flat" ? (
+                <InputWithPrefix
+                  prefix="$"
+                  inputMode="decimal"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={lfVal}
+                  onChange={(e) => update("lateFeeValue", parseFloat(e.target.value || "0"))}
+                />
+              ) : (
+                <InputWithSuffix
+                  suffix="%"
+                  inputMode="decimal"
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={100}
+                  value={lfVal}
+                  onChange={(e) => update("lateFeeValue", parseFloat(e.target.value || "0"))}
+                />
+              )}
+              <span className="text-xs text-slate-500">
+                {lfKind === "flat"
+                  ? "Charge a fixed late fee in dollars."
+                  : "Charge a percentage of the monthly rent."}
+              </span>
             </label>
           </div>
 
@@ -563,7 +685,7 @@ function LeaseFormModal({
                 value={initial.notes ?? ""}
                 onChange={(e) => update("notes", e.target.value)}
                 className="rounded-lg border border-slate-300 px-3 py-2"
-                placeholder="e.g., Pets allowed, parking, utilities"
+                placeholder="e.g., pets allowed, parking, utilities"
               />
             </label>
 
@@ -581,6 +703,12 @@ function LeaseFormModal({
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
+            <Link
+              href="/tenants"
+              className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50"
+            >
+              Back to Tenants
+            </Link>
             <button
               type="button"
               onClick={onClose}
