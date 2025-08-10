@@ -72,12 +72,7 @@ export default function Home() {
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="max-w-6xl mx-auto px-4 py-20 md:py-28 grid md:grid-cols-2 gap-10 items-center">
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-           
-          ><div className="space-y-6">
+          <div><div className="space-y-6">
             <span className="inline-flex w-fit items-center rounded-2xl px-3 py-1 text-xs font-medium bg-slate-900 text-white">
               Built for 1–20 units
             </span>
@@ -123,7 +118,7 @@ export default function Home() {
                 <div className="text-xs text-slate-500">email & chat</div>
               </div>
             </div>
-          </div></motion.div>
+          </div></div>
 
           {/* KPI Card */}
           <motion.div
