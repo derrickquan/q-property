@@ -30,11 +30,13 @@ export default function Home() {
             <span className="font-semibold">Q Property</span>
           </div>
 
-          <nav className="hidden md:flex items-center gap-6 text-slate-600">
-            <a href="#features" className="hover:text-slate-900">Features</a>
-            <a href="#pricing" className="hover:text-slate-900">Pricing</a>
-            <a href="#contact" className="hover:text-slate-900">Contact</a>
-          </nav>
+<nav className="hidden md:flex items-center gap-6 text-slate-600">
+  <a href="#features" className="hover:text-slate-900">Features</a>
+  <a href="#pricing" className="hover:text-slate-900">Pricing</a>
+  <a href="#contact" className="hover:text-slate-900">Contact</a>
+  <a href="/properties" className="hover:text-slate-900">Properties</a> {/* NEW */}
+</nav>
+
 
           <div className="flex items-center gap-2">
             <a href="#signup" className="px-4 py-2 rounded border border-slate-300 text-slate-900 hover:bg-slate-50">Sign in</a>
