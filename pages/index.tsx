@@ -76,8 +76,8 @@ export default function Home() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="space-y-6"
-          >
+           
+          ><div className="space-y-6">
             <span className="inline-flex w-fit items-center rounded-2xl px-3 py-1 text-xs font-medium bg-slate-900 text-white">
               Built for 1–20 units
             </span>
@@ -123,7 +123,7 @@ export default function Home() {
                 <div className="text-xs text-slate-500">email & chat</div>
               </div>
             </div>
-          </motion.div>
+          </div></motion.div>
 
           {/* KPI Card */}
           <motion.div
