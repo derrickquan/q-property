@@ -44,13 +44,15 @@ export default function LeasesPage() {
       .map((l) => {
         const t = byTenant.get(l.tenantId);
         const p = byProp.get(l.propertyId);
-        const tenantName =
-          t?.fullName ??
-          [t?.firstName, t?.lastName].filter(Boolean).join(" ") ||
-          "—";
+
+        const partsName = [t?.firstName, t?.lastName].filter(Boolean).join(" ");
+        const fullOrParts = (t?.fullName ?? partsName);
+        const tenantName = (fullOrParts && fullOrParts.trim().length > 0) ? fullOrParts : "—";
+
         const propertyLabel = p
           ? `${p.name}${p.city ? ` — ${p.city}, ${p.state ?? ""}` : ""}`
           : "—";
+
         return { ...l, tenantName, propertyLabel };
       })
       .sort((a, b) => a.tenantName.localeCompare(b.tenantName));
@@ -226,12 +228,11 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
             >
               <option value="">— Select tenant —</option>
               {tenants.map((t) => {
-                const name =
-                  t.fullName ??
-                  [t.firstName, t.lastName].filter(Boolean).join(" ");
+                const parts = [t.firstName, t.lastName].filter(Boolean).join(" ");
+                const name = (t.fullName ?? parts) || "(unnamed)";
                 return (
                   <option key={t.id} value={t.id}>
-                    {name || "(unnamed)"}
+                    {name}
                   </option>
                 );
               })}
