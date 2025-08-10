@@ -1,398 +1,544 @@
 // pages/tenants.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { Property, Tenant, UnitType } from "../lib/types";
-import { load, save } from "../lib/storage";
 
-/** STORAGE KEYS */
-const PROPERTIES_KEY = "properties";
-const TENANTS_KEY = "tenants";
+/** =========================
+ *  Local types (self-contained)
+ *  ========================= */
+type UnitType = "residential" | "commercial";
 
-/** Small ID helper */
-function newId(prefix = "t"): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 9)}_${Date.now().toString(36)}`;
-}
-
-/** Mock tenants (always visible) */
-const MOCK_TENANTS: Tenant[] = [
-  {
-    id: "t1",
-    fullName: "John Smith",
-    email: "john.smith@example.com",
-    phone: "(555) 111-2222",
-    propertyId: "mock1", // should match a mock property ID you use
-    unit: "101",
-    notes: "Always pays on time",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "t2",
-    fullName: "Lisa Wong",
-    email: "lisa.wong@example.com",
-    phone: "(555) 333-4444",
-    propertyId: "mock2",
-    unit: "2B",
-    notes: "Prefers email contact",
-    createdAt: new Date().toISOString(),
-  },
-];
-
-/** Form state type (editing / creating) */
-type TenantDraft = {
-  id?: string;
-  fullName: string;
+type Tenant = {
+  id: string;
+  name: string;
   email?: string;
   phone?: string;
-  propertyId: string;
+  propertyId?: string;
+  propertyName?: string;
   unit?: string;
+  notes?: string;
+  balance?: number; // current balance owed (can be negative if credit)
+};
+
+type Property = {
+  id: string;
+  name: string;
+  address1: string;
+  city: string;
+  state: string;
+  zip: string;
+  unitCount?: number;
+  type?: UnitType;
   notes?: string;
 };
 
+/** =========================
+ *  Storage helpers (safe on SSR)
+ *  ========================= */
+function load<T>(key: string, fallback: T): T {
+  try {
+    if (typeof window === "undefined") return fallback;
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function save<T>(key: string, value: T) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+}
+
+/** =========================
+ *  Storage keys
+ *  ========================= */
+const PROPERTIES_KEY = "properties";
+const TENANTS_KEY = "tenants";
+
+/** =========================
+ *  Mock data
+ *  ========================= */
+const MOCK_TENANTS: Tenant[] = [
+  {
+    id: "t_mock_elliot",
+    name: "Elliot Park",
+    email: "elliot@example.com",
+    phone: "(424) 555-0110",
+    propertyId: "mock1",
+    propertyName: "Maplewood Apartments — Los Angeles, CA",
+    unit: "3B",
+    balance: 142.5,
+    notes: "Prefers SMS reminders.",
+  },
+  {
+    id: "t_mock_rhea",
+    name: "Rhea Patel",
+    email: "rhea@example.com",
+    phone: "(424) 555-0127",
+    propertyId: "mock2",
+    propertyName: "Sunset Plaza Retail — West Hollywood, CA",
+    unit: "Suite 210",
+    balance: 0,
+    notes: "Commercial tenant — ACH only.",
+  },
+];
+
+/** =========================
+ *  UI helpers
+ *  ========================= */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="max-w-6xl mx-auto px-4 py-8">
+      <h1 className="text-2xl font-semibold mb-4">{title}</h1>
+      <div className="rounded-xl border border-slate-200 bg-white">{children}</div>
+    </section>
+  );
+}
+
+function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <th
+      className={`text-left text-xs font-semibold uppercase tracking-wide text-slate-500 px-4 py-3 ${className}`}
+    >
+      {children}
+    </th>
+  );
+}
+function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <td className={`px-4 py-3 align-top ${className}`}>{children}</td>;
+}
+
+/** =========================
+ *  Main Page
+ *  ========================= */
 export default function TenantsPage() {
   const [properties, setProperties] = useState<Property[]>([]);
-  const [items, setItems] = useState<Tenant[]>([]);
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<TenantDraft | null>(null);
-  const [search, setSearch] = useState("");
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<Tenant | null>(null);
 
-  /** Load properties and tenants */
+  const [showPay, setShowPay] = useState(false);
+  const [payTarget, setPayTarget] = useState<Tenant | null>(null);
+
+  // Load properties/tenants and inject mocks if needed
   useEffect(() => {
     const props = load<Property[]>(PROPERTIES_KEY, []);
     setProperties(props);
 
     const stored = load<Tenant[]>(TENANTS_KEY, []);
-    const filteredStored = stored.filter((t) => !MOCK_TENANTS.find((m) => m.id === t.id));
-    setItems([...MOCK_TENANTS, ...filteredStored]);
+    // ensure mock tenants exist
+    const have = new Map(stored.map((t) => [t.id, true]));
+    const withMocks = [...stored];
+    MOCK_TENANTS.forEach((m) => {
+      if (!have.has(m.id)) withMocks.push(m);
+    });
+    setTenants(withMocks);
+    save(TENANTS_KEY, withMocks);
   }, []);
 
-  /** Persist user-created tenants (don’t persist mock IDs) */
-  useEffect(() => {
-    const nonMock = items.filter((t) => !MOCK_TENANTS.find((m) => m.id === t.id));
-    save(TENANTS_KEY, nonMock);
-  }, [items]);
-
-  const propertyIndex = useMemo(() => {
-    const map = new Map<string, Property>();
-    for (const p of properties) map.set(p.id, p);
-    return map;
-  }, [properties]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((t) => {
-      const prop = propertyIndex.get(t.propertyId);
-      const hay =
-        `${t.fullName} ${t.email ?? ""} ${t.phone ?? ""} ${t.unit ?? ""} ${
-          prop ? `${prop.name} ${prop.city} ${prop.state}` : ""
-        }`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [items, search, propertyIndex]);
+  const sorted = useMemo(() => {
+    return [...tenants].sort((a, b) => a.name.localeCompare(b.name));
+  }, [tenants]);
 
   function openCreate() {
-    const firstPropId = properties[0]?.id ?? "";
-    setEditing({
-      fullName: "",
-      email: "",
-      phone: "",
-      propertyId: firstPropId,
-      unit: "",
-      notes: "",
-    });
-    setOpen(true);
+    setEditing(null);
+    setShowForm(true);
   }
-
   function openEdit(t: Tenant) {
-    setEditing({
-      id: t.id,
-      fullName: t.fullName,
-      email: t.email ?? "",
-      phone: t.phone ?? "",
-      propertyId: t.propertyId,
-      unit: t.unit ?? "",
-      notes: t.notes ?? "",
-    });
-    setOpen(true);
+    setEditing(t);
+    setShowForm(true);
   }
-
-  function closeModal() {
-    setOpen(false);
+  function onSaveTenant(next: Tenant) {
+    setTenants((prev) => {
+      const idx = prev.findIndex((t) => t.id === next.id);
+      const updated = idx >= 0 ? [...prev.slice(0, idx), next, ...prev.slice(idx + 1)] : [...prev, next];
+      save(TENANTS_KEY, updated);
+      return updated;
+    });
+    setShowForm(false);
     setEditing(null);
   }
-
-  function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editing) return;
-
-    const now = new Date().toISOString();
-
-    if (editing.id) {
-      setItems((prev) =>
-        prev.map((t) =>
-          t.id === editing.id
-            ? {
-                ...t,
-                fullName: editing.fullName.trim(),
-                email: editing.email?.trim() || undefined,
-                phone: editing.phone?.trim() || undefined,
-                propertyId: editing.propertyId,
-                unit: editing.unit?.trim() || undefined,
-                notes: editing.notes?.trim() || undefined,
-              }
-            : t
-        )
-      );
-    } else {
-      const toAdd: Tenant = {
-        id: newId("t"),
-        fullName: editing.fullName.trim(),
-        email: editing.email?.trim() || undefined,
-        phone: editing.phone?.trim() || undefined,
-        propertyId: editing.propertyId,
-        unit: editing.unit?.trim() || undefined,
-        notes: editing.notes?.trim() || undefined,
-        createdAt: now,
-      };
-      setItems((prev) => [toAdd, ...prev]);
-    }
-
-    closeModal();
+  function handleDelete(id: string) {
+    const isMock = MOCK_TENANTS.some((m) => m.id === id);
+    if (isMock) return; // keep mock rows permanent
+    if (!confirm("Delete this tenant? This cannot be undone.")) return;
+    setTenants((prev) => {
+      const updated = prev.filter((t) => t.id !== id);
+      save(TENANTS_KEY, updated);
+      return updated;
+    });
   }
 
-  function handleDelete(id: string) {
-    setItems((prev) => prev.filter((t) => t.id !== id));
+  /** Payment modal handlers */
+  function openPay(t: Tenant) {
+    setPayTarget(t);
+    setShowPay(true);
+  }
+  function onRecordPayment(tenantId: string, amount: number) {
+    setTenants((prev) => {
+      const updated = prev.map((t) =>
+        t.id === tenantId ? { ...t, balance: Math.round(((t.balance ?? 0) - amount) * 100) / 100 } : t
+      );
+      save(TENANTS_KEY, updated);
+      return updated;
+    });
+    setShowPay(false);
+    setPayTarget(null);
   }
 
   return (
-    <main className="max-w-6xl mx-auto px-4 py-10">
-      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-semibold">Tenants</h1>
-        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search tenants, properties, units…"
-            className="w-full sm:w-80 rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-          />
+    <>
+      <Section title="Tenants">
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+          <p className="text-slate-600">
+            Manage residents & commercial tenants. Use <b>Lease</b> or <b>Statement</b> to jump to tenant-specific pages.
+          </p>
           <button
             onClick={openCreate}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+            className="rounded-lg bg-blue-600 text-white px-4 py-2 hover:bg-blue-700"
           >
             Add tenant
           </button>
         </div>
-      </header>
 
-      {/* Tenants Table */}
-      <div className="overflow-auto rounded-xl border border-slate-200">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600">
-            <tr>
-              <Th>Name</Th>
-              <Th>Contact</Th>
-              <Th>Property / Unit</Th>
-              <Th className="hidden md:table-cell">Notes</Th>
-              <Th className="text-right pr-4">Actions</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
-            {filtered.map((t) => {
-              const prop = propertyIndex.get(t.propertyId);
-              return (
-                <tr key={t.id} className="hover:bg-slate-50">
-                  <Td className="font-medium">{t.fullName}</Td>
-                  <Td>
-                    <div className="flex flex-col">
-                      {t.email && <span>{t.email}</span>}
-                      {t.phone && <span className="text-slate-500">{t.phone}</span>}
-                    </div>
-                  </Td>
-                  <Td>
-                    {prop ? (
-                      <div className="flex flex-col">
-                        <span className="font-medium">{prop.name}</span>
-                        <span className="text-slate-500">
-                          {prop.city}, {prop.state} {t.unit ? `• Unit ${t.unit}` : ""}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-slate-500">—</span>
-                    )}
-                  </Td>
-                  <Td className="hidden md:table-cell max-w-[280px] truncate">
-                    {t.notes ?? "—"}
-                  </Td>
-                  <Td className="text-right pr-4">
-                    <div className="inline-flex items-center gap-2">
-                      <button
-                        onClick={() => openEdit(t)}
-                        className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
-                      >
-                        Edit
-                      </button>
-                      {/* Hide delete for mock rows to keep them permanent */}
-                      {!MOCK_TENANTS.find((m) => m.id === t.id) && (
-                        <button
-                          onClick={() => handleDelete(t.id)}
-                          className="rounded border border-red-200 px-2 py-1 text-red-600 hover:bg-red-50"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                <Th>Tenant</Th>
+                <Th>Contact</Th>
+                <Th>Property / Unit</Th>
+                <Th className="text-right">Balance</Th>
+                <Th className="text-right pr-4">Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.length === 0 && (
+                <tr>
+                  <Td colSpan={5 as unknown as undefined}>
+                    <div className="text-slate-500">No tenants yet.</div>
                   </Td>
                 </tr>
-              );
-            })}
-            {filtered.length === 0 && (
-              <tr>
-                <Td colSpan={5} className="py-10 text-center text-slate-500">
-                  No tenants found. Click <b>Add tenant</b> to get started.
-                </Td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              )}
+              {sorted.map((t) => {
+                const isMock = MOCK_TENANTS.some((m) => m.id === t.id);
+                return (
+                  <tr key={t.id} className="border-b border-slate-100">
+                    <Td>
+                      <div className="font-medium text-slate-900">{t.name}</div>
+                      {t.notes && <div className="text-slate-500 text-xs mt-0.5">{t.notes}</div>}
+                    </Td>
+                    <Td>
+                      <div className="text-slate-700">{t.email || "—"}</div>
+                      <div className="text-slate-500">{t.phone || "—"}</div>
+                    </Td>
+                    <Td>
+                      <div className="text-slate-700">{t.propertyName || "—"}</div>
+                      <div className="text-slate-500">{t.unit || "—"}</div>
+                    </Td>
+                    <Td className="text-right font-medium">
+                      ${Math.abs(t.balance ?? 0).toFixed(2)}
+                      {(t.balance ?? 0) >= 0 ? "" : " CR"}
+                    </Td>
+                    <Td className="text-right pr-4">
+                      <div className="inline-flex items-center gap-2">
+                        <Link
+                          href={`/leases?tenant=${encodeURIComponent(t.id)}`}
+                          className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
+                        >
+                          Lease
+                        </Link>
+                        <Link
+                          href={`/statements?tenant=${encodeURIComponent(t.id)}`}
+                          className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
+                        >
+                          Statement
+                        </Link>
+                        <button
+                          onClick={() => openPay(t)}
+                          className="rounded border border-emerald-300 text-emerald-700 px-2 py-1 hover:bg-emerald-50"
+                        >
+                          Payment
+                        </button>
+                        <button
+                          onClick={() => openEdit(t)}
+                          className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
+                        >
+                          Edit
+                        </button>
+                        {!isMock && (
+                          <button
+                            onClick={() => handleDelete(t.id)}
+                            className="rounded border border-red-200 text-red-600 px-2 py-1 hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Section>
 
-      {/* Modal */}
-      {open && editing && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-          <div className="w-full max-w-xl rounded-xl bg-white p-5 shadow-xl">
-            <div className="flex items-center justify-between pb-2">
-              <h2 className="text-lg font-semibold">
-                {editing.id ? "Edit tenant" : "Add tenant"}
-              </h2>
-              <button
-                onClick={closeModal}
-                className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
-              >
-                Close
-              </button>
+      {showForm && (
+        <TenantFormModal
+          properties={properties}
+          initial={editing || undefined}
+          onClose={() => {
+            setShowForm(false);
+            setEditing(null);
+          }}
+          onSave={onSaveTenant}
+        />
+      )}
+
+      {showPay && payTarget && (
+        <PaymentModal
+          tenant={payTarget}
+          onClose={() => {
+            setShowPay(false);
+            setPayTarget(null);
+          }}
+          onRecord={onRecordPayment}
+        />
+      )}
+    </>
+  );
+}
+
+/** =========================
+ *  Tenant Form Modal
+ *  ========================= */
+function TenantFormModal({
+  properties,
+  initial,
+  onClose,
+  onSave,
+}: {
+  properties: Property[];
+  initial?: Tenant;
+  onClose: () => void;
+  onSave: (t: Tenant) => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [email, setEmail] = useState(initial?.email ?? "");
+  const [phone, setPhone] = useState(initial?.phone ?? "");
+  const [propertyId, setPropertyId] = useState(initial?.propertyId ?? properties[0]?.id ?? "");
+  const [unit, setUnit] = useState(initial?.unit ?? "");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [balance, setBalance] = useState<number>(initial?.balance ?? 0);
+
+  const propName = useMemo(() => {
+    const p = properties.find((x) => x.id === propertyId);
+    return p ? `${p.name} — ${p.city}, ${p.state}` : "";
+  }, [propertyId, properties]);
+
+  function submit() {
+    if (!name.trim()) {
+      alert("Please enter a full name.");
+      return;
+    }
+    const t: Tenant = {
+      id: initial?.id ?? `t_${Date.now()}`,
+      name: name.trim(),
+      email: email.trim() || undefined,
+      phone: phone.trim() || undefined,
+      propertyId: propertyId || undefined,
+      propertyName: propName || undefined,
+      unit: unit.trim() || undefined,
+      notes: notes.trim() || undefined,
+      balance: Number.isFinite(balance) ? balance : 0,
+    };
+    onSave(t);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
+      <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+          <h2 className="text-lg font-semibold">{initial ? "Edit tenant" : "Add tenant"}</h2>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-700">
+            Close
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700">Full name</label>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="e.g., Jamie Nguyen"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Email (optional)</label>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Phone (optional)</label>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                placeholder="(555) 123-4567"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+            </div>
+          </div>
 
-            <form className="grid gap-4" onSubmit={handleSave}>
-              <label className="grid gap-1">
-                <span className="text-sm">Full name</span>
-                <input
-                  value={editing.fullName}
-                  onChange={(e) => setEditing({ ...editing, fullName: e.target.value })}
-                  className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </label>
+          {/* Property Select */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700">Property</label>
+            <select
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              value={propertyId}
+              onChange={(e) => setPropertyId(e.target.value)}
+            >
+              {properties.length === 0 && <option value="">— No properties —</option>}
+              {properties.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} — {p.city}, {p.state}
+                </option>
+              ))}
+            </select>
+          </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label className="grid gap-1">
-                  <span className="text-sm">Email (optional)</span>
-                  <input
-                    value={editing.email ?? ""}
-                    onChange={(e) => setEditing({ ...editing, email: e.target.value })}
-                    className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                    type="email"
-                    placeholder="you@example.com"
-                  />
-                </label>
+          {/* Unit on its own line */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700">Unit (optional)</label>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="e.g., #3B or Suite 210"
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+            />
+          </div>
 
-                <label className="grid gap-1">
-                  <span className="text-sm">Phone (optional)</span>
-                  <input
-                    value={editing.phone ?? ""}
-                    onChange={(e) => setEditing({ ...editing, phone: e.target.value })}
-                    className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="(555) 123-4567"
-                  />
-                </label>
-              </div>
-
-              {/* Property full width */}
-              <label className="grid gap-1">
-                <span className="text-sm">Property</span>
-                <select
-                  value={editing.propertyId}
-                  onChange={(e) => setEditing({ ...editing, propertyId: e.target.value })}
-                  className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  {properties.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} — {p.city}, {p.state}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {/* Unit on its own line */}
-              <label className="grid gap-1">
-                <span className="text-sm">Unit (optional)</span>
-                <input
-                  value={editing.unit ?? ""}
-                  onChange={(e) => setEditing({ ...editing, unit: e.target.value })}
-                  className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., #3B"
-                />
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-sm">Notes (optional)</span>
-                <textarea
-                  value={editing.notes ?? ""}
-                  onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
-                  className="min-h-[110px] rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </label>
-
-              <div className="flex items-center gap-3 pt-1">
-                <button
-                  type="submit"
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-                >
-                  {editing.id ? "Save changes" : "Create tenant"}
-                </button>
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Starting balance</label>
+              <input
+                type="number"
+                step="0.01"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                value={balance}
+                onChange={(e) => setBalance(parseFloat(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Notes (optional)</label>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                placeholder="internal note"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
           </div>
         </div>
-      )}
-    </main>
+
+        <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            className="rounded-lg bg-blue-600 text-white px-4 py-2 hover:bg-blue-700"
+          >
+            {initial ? "Save changes" : "Create tenant"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
-/* Table helpers */
-function Th({
-  children,
-  className = "",
+/** =========================
+ *  Payment Modal
+ *  ========================= */
+function PaymentModal({
+  tenant,
+  onClose,
+  onRecord,
 }: {
-  children: React.ReactNode;
-  className?: string;
+  tenant: Tenant;
+  onClose: () => void;
+  onRecord: (tenantId: string, amount: number) => void;
 }) {
-  return (
-    <th className={`px-3 py-2 text-left text-xs font-semibold uppercase ${className}`}>
-      {children}
-    </th>
-  );
-}
+  const [amount, setAmount] = useState<number>(0);
 
-function Td({
-  children,
-  className = "",
-  colSpan,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  colSpan?: number;
-}) {
+  function submit() {
+    if (!(amount > 0)) {
+      alert("Enter a positive payment amount.");
+      return;
+    }
+    onRecord(tenant.id, Math.round(amount * 100) / 100);
+  }
+
   return (
-    <td className={`px-3 py-3 align-top ${className}`} colSpan={colSpan}>
-      {children}
-    </td>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+          <h2 className="text-lg font-semibold">Record payment</h2>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-700">
+            Close
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          <div className="text-slate-700">
+            Tenant: <span className="font-medium">{tenant.name}</span>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700">Amount</label>
+            <input
+              type="number"
+              step="0.01"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => setAmount(parseFloat(e.target.value))}
+            />
+            <div className="text-xs text-slate-500 mt-1">
+              Current balance: ${Math.abs(tenant.balance ?? 0).toFixed(2)}
+              {(tenant.balance ?? 0) >= 0 ? "" : " CR"}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            className="rounded-lg bg-emerald-600 text-white px-4 py-2 hover:bg-emerald-700"
+          >
+            Record payment
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
