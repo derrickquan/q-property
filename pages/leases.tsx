@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Property, Tenant, Lease, LateFeeType, LeaseStatus } from "../lib/types";
 import { load, save } from "../lib/storage";
 
-/** ---------- small table cells (typed so colSpan/title work) ---------- */
+/* -------------------------- table cell helpers -------------------------- */
 function Th(props: React.ThHTMLAttributes<HTMLTableCellElement>) {
   const { className = "", ...rest } = props;
   return (
@@ -19,20 +19,43 @@ function Td(props: React.TdHTMLAttributes<HTMLTableCellElement>) {
   return <td className={`p-3 align-middle ${className}`} {...rest} />;
 }
 
-/** ---------- storage keys ---------- */
+/* ------------------------------- storage ------------------------------- */
 const K_PROPERTIES = "properties";
 const K_TENANTS = "tenants";
 const K_LEASES = "leases";
 
-/** ---------- helpers ---------- */
+/* -------------------------------- utils -------------------------------- */
+const today = () => {
+  const d = new Date();
+  const mm = `${d.getMonth() + 1}`.padStart(2, "0");
+  const dd = `${d.getDate()}`.padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+};
+
+const sanitizeMoney = (s: string) => {
+  const cleaned = s.replace(/[^\d.]/g, "");
+  const [l = "0", r = ""] = cleaned.split(".");
+  const left = `${Number(l)}`;
+  const right = r.slice(0, 2);
+  return right ? `${left}.${right}` : left;
+};
+const parseCurrency = (s: string) => {
+  const n = Number((s || "").replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+};
+const isFiniteNum = (s: string | number) => Number.isFinite(Number(s));
+
+/** Prefer First + Last, then fullName, then email/phone, then “(unnamed)” */
 function tenantDisplay(t?: Tenant): string {
   if (!t) return "—";
-  const full = (t.fullName || "").trim();
+  const fl = [t.firstName, t.lastName].filter(Boolean).join(" ").trim();
+  if (fl) return fl;
+  const full = (t as any).fullName?.trim?.() || "";
   if (full) return full;
-  const combo = [t.firstName, t.lastName].filter(Boolean).join(" ").trim();
-  if (combo) return combo;
-  if (t.email?.trim()) return t.email.trim();
-  if (t.phone?.trim()) return t.phone.trim();
+  const email = (t.email || "").trim();
+  if (email) return email;
+  const phone = (t.phone || "").trim();
+  if (phone) return phone;
   return "(unnamed)";
 }
 function propertyLabel(p?: Property): string {
@@ -43,41 +66,30 @@ function propertyLabel(p?: Property): string {
   if (byAddr) return byAddr;
   return "(unnamed)";
 }
-function today(): string {
-  const d = new Date();
-  const m = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-function sanitizeMoney(s: string): string {
-  const cleaned = s.replace(/[^\d.]/g, "");
-  const [l = "0", r = ""] = cleaned.split(".");
-  const left = `${Number(l)}`;
-  const right = r.slice(0, 2);
-  return right ? `${left}.${right}` : left;
-}
-function parseCurrency(s: string): number {
-  const n = Number(s.replace(/[^0-9.]/g, ""));
-  return Number.isFinite(n) ? n : 0;
-}
-function isFiniteNum(s: string): boolean {
-  const n = Number(s);
-  return Number.isFinite(n);
+
+/** months difference rounded up to whole lease “years” when divided by 12 */
+function monthsDiffRoundedUp(startISO: string, endISO?: string): number {
+  const s = new Date(startISO);
+  const e = endISO ? new Date(endISO) : new Date(s);
+  if (!endISO) e.setFullYear(s.getFullYear() + 1); // default 1 year
+  const m1 = s.getFullYear() * 12 + s.getMonth();
+  const m2 = e.getFullYear() * 12 + e.getMonth();
+  const months = Math.max(1, m2 - m1 + 1); // include the end month
+  return months;
 }
 
-/** ---------- page ---------- */
+/* -------------------------------- page --------------------------------- */
 export default function LeasesPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [leases, setLeases] = useState<Lease[]>([]);
   const [showCreate, setShowCreate] = useState(false);
 
-  // Seed fallback data here if storage is empty so dropdowns are never blank.
+  // Seed fallback data so dropdowns are never empty
   useEffect(() => {
-    // PROPERTIES
     const storedProps = load<Property[]>(K_PROPERTIES, []);
     if (storedProps.length === 0) {
-      const seededProps: Property[] = [
+      const seeded: Property[] = [
         {
           id: "mock_prop_1",
           name: "Maplewood Apartments",
@@ -106,27 +118,25 @@ export default function LeasesPage() {
           type: "residential" as any,
         },
       ];
-      setProperties(seededProps);
-      save(K_PROPERTIES, seededProps);
+      setProperties(seeded);
+      save(K_PROPERTIES, seeded);
     } else {
       setProperties(storedProps);
     }
 
-    // TENANTS
     const storedTenants = load<Tenant[]>(K_TENANTS, []);
     if (storedTenants.length === 0) {
-      const seededTenants: Tenant[] = [
+      const seededT: Tenant[] = [
         { id: "mock_t_1", firstName: "Alex", lastName: "Nguyen", email: "alex@example.com" } as Tenant,
         { id: "mock_t_2", firstName: "Brianna", lastName: "Lopez", phone: "555-201-4455" } as Tenant,
-        { id: "mock_t_3", fullName: "Chris Patel" } as Tenant,
+        { id: "mock_t_3", firstName: "Chris", lastName: "Patel" } as Tenant,
       ];
-      setTenants(seededTenants);
-      save(K_TENANTS, seededTenants);
+      setTenants(seededT);
+      save(K_TENANTS, seededT);
     } else {
       setTenants(storedTenants);
     }
 
-    // LEASES (leave as-is; we don’t auto-seed leases)
     setLeases(load<Lease[]>(K_LEASES, []));
   }, []);
 
@@ -162,6 +172,7 @@ export default function LeasesPage() {
             <Link className="hover:text-slate-900" href="/properties">Properties</Link>
             <Link className="hover:text-slate-900" href="/tenants">Tenants</Link>
             <span className="text-slate-900 font-medium">Leases</span>
+            <Link className="hover:text-slate-900" href="/statements">Statements</Link>
           </nav>
           <div />
         </div>
@@ -230,7 +241,7 @@ export default function LeasesPage() {
   );
 }
 
-/** ---------- create modal ---------- */
+/* ---------------------------- create lease modal ---------------------------- */
 
 type CreateProps = {
   properties: Property[];
@@ -253,6 +264,14 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
   const [status, setStatus] = useState<LeaseStatus>("active");
   const [notes, setNotes] = useState("");
 
+  // New: annual increases + option years
+  const [incType, setIncType] = useState<"flat" | "percent">("percent");
+  const [incValue, setIncValue] = useState<string>("3"); // % by default
+  const [hasOptions, setHasOptions] = useState<boolean>(false);
+  const [optionYears, setOptionYears] = useState<number>(0);
+  const [optIncType, setOptIncType] = useState<"flat" | "percent">("percent");
+  const [optIncValue, setOptIncValue] = useState<string>("3");
+
   const sortedTenants = useMemo(
     () => [...tenants].sort((a, b) => tenantDisplay(a).localeCompare(tenantDisplay(b))),
     [tenants]
@@ -262,6 +281,34 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
     [properties]
   );
 
+  /* ------------------------ derived: schedule preview ------------------------ */
+  const schedule = useMemo(() => {
+    // base term in years (ceiling of months/12)
+    const baseMonths = monthsDiffRoundedUp(startDate, endDate || undefined);
+    const baseYears = Math.max(1, Math.ceil(baseMonths / 12));
+    const extraYears = hasOptions ? Math.max(0, optionYears) : 0;
+
+    const rows: { label: string; yearIndex: number; monthly: number }[] = [];
+    let amt = parseCurrency(monthlyRent) || 0;
+
+    for (let i = 1; i <= baseYears; i++) {
+      rows.push({ label: `Year ${i}`, yearIndex: i, monthly: amt });
+      // bump for next year (base term rule)
+      const incV = Number(incValue) || 0;
+      amt = incType === "percent" ? amt * (1 + incV / 100) : amt + incV;
+    }
+
+    for (let j = 1; j <= extraYears; j++) {
+      rows.push({ label: `Option ${j}`, yearIndex: baseYears + j, monthly: amt });
+      // bump for next option year (option rule)
+      const oV = Number(optIncValue) || 0;
+      amt = optIncType === "percent" ? amt * (1 + oV / 100) : amt + oV;
+    }
+
+    return rows;
+  }, [monthlyRent, startDate, endDate, incType, incValue, hasOptions, optionYears, optIncType, optIncValue]);
+
+  /* ---------------------------- submit & validation --------------------------- */
   const canSubmit =
     tenantId &&
     propertyId &&
@@ -274,6 +321,10 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
 
   function submit() {
     if (!canSubmit) return;
+    // Keep Lease shape stable; stash new fields in notes for now
+    const extra = ` | Increase: ${incType} ${incValue}${
+      incType === "percent" ? "%" : ""
+    } | Options: ${hasOptions ? `${optionYears} (${optIncType} ${optIncValue}${optIncType === "percent" ? "%" : ""})` : "none"}`;
     const lease: Lease = {
       id: `l_${Date.now()}`,
       tenantId,
@@ -286,16 +337,19 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
       graceDays,
       lateFeeType,
       lateFeeValue: lateFeeType === "flat" ? Number(parseCurrency(lateFeeValue)) : Number(lateFeeValue),
-      notes: notes || undefined,
+      notes: [notes || "", extra].filter(Boolean).join(""),
       status,
-    };
+    } as Lease;
     onCreate(lease);
   }
 
-  // No backdrop-click close.
+  /* --------------------------------- render --------------------------------- */
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/40">
-      <div className="max-w-3xl w-[880px] bg-white rounded-2xl shadow-xl border border-slate-200">
+      <div
+        className="max-w-4xl w-[960px] bg-white rounded-2xl shadow-xl border border-slate-200"
+        // prevent backdrop-close by not attaching any click handler to the overlay
+      >
         <div className="p-4 border-b border-slate-200 flex items-center justify-between">
           <div className="text-lg font-semibold">Add lease</div>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-900">Close</button>
@@ -357,12 +411,24 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
             />
           </Labeled>
 
-          {/* Security deposit (required) */}
+          {/* Security deposit + Grace period (same row) */}
           <Labeled label="Security deposit" hint="Required. Use $0.00 if none.">
             <CurrencyInput value={securityDeposit} onChange={setSecurityDeposit} />
           </Labeled>
+          <Labeled
+            label="Grace period (days)"
+            hint="Extra days after the due date before the rent is considered late."
+          >
+            <input
+              type="number"
+              min={0}
+              value={graceDays}
+              onChange={(e) => setGraceDays(Number(e.target.value))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+            />
+          </Labeled>
 
-          {/* Dates */}
+          {/* Start + End (same row) */}
           <Labeled label="Start date">
             <input
               type="date"
@@ -380,59 +446,124 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
             />
           </Labeled>
 
-          {/* Grace + Late fee (kept on same row via grid) */}
-          <Labeled
-            label="Grace period (days)"
-            hint="Extra days after the due date before the rent is considered late."
-          >
-            <input
-              type="number"
-              min={0}
-              value={graceDays}
-              onChange={(e) => setGraceDays(Number(e.target.value))}
+          {/* Late fee row stays aligned */}
+          <Labeled label="Late fee type">
+            <select
+              value={lateFeeType}
+              onChange={(e) => setLateFeeType(e.target.value as LateFeeType)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
+            >
+              <option value="flat">Flat $</option>
+              <option value="percent">% of monthly rent</option>
+            </select>
+          </Labeled>
+          <Labeled
+            label="Late fee value"
+            hint={lateFeeType === "flat" ? "Charge a fixed late fee in dollars." : "Charge a % of the monthly rent."}
+          >
+            {lateFeeType === "flat" ? (
+              <CurrencyInput value={lateFeeValue} onChange={setLateFeeValue} />
+            ) : (
+              <div className="flex items-center">
+                <input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={lateFeeValue}
+                  onChange={(e) => setLateFeeValue(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                />
+                <span className="ml-2 text-slate-500">%</span>
+              </div>
+            )}
           </Labeled>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Labeled label="Late fee type">
-              <select
-                value={lateFeeType}
-                onChange={(e) => setLateFeeType(e.target.value as LateFeeType)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
-              >
-                <option value="flat">Flat $</option>
-                <option value="percent">% of monthly rent</option>
-              </select>
-            </Labeled>
-
-            <Labeled
-              label="Late fee value"
-              hint={
-                lateFeeType === "flat"
-                  ? "Charge a fixed late fee in dollars."
-                  : "Charge a % of the monthly rent."
-              }
+          {/* Annual increases */}
+          <div className="md:col-span-2 border-t border-slate-200 pt-3" />
+          <Labeled label="Annual increase type">
+            <select
+              value={incType}
+              onChange={(e) => setIncType(e.target.value as "flat" | "percent")}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2"
             >
-              {lateFeeType === "flat" ? (
-                <CurrencyInput value={lateFeeValue} onChange={setLateFeeValue} />
-              ) : (
-                <div className="flex items-center">
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.1"
-                    value={lateFeeValue}
-                    onChange={(e) => setLateFeeValue(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                  />
-                  <span className="ml-2 text-slate-500">%</span>
-                </div>
-              )}
-            </Labeled>
+              <option value="percent">% increase each year</option>
+              <option value="flat">Flat $ increase each year</option>
+            </select>
+          </Labeled>
+          <Labeled label="Annual increase value">
+            {incType === "percent" ? (
+              <div className="flex items-center">
+                <input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={incValue}
+                  onChange={(e) => setIncValue(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                />
+                <span className="ml-2 text-slate-500">%</span>
+              </div>
+            ) : (
+              <CurrencyInput value={incValue} onChange={setIncValue} />
+            )}
+          </Labeled>
+
+          {/* Option years toggle + controls */}
+          <div className="md:col-span-2">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={hasOptions}
+                onChange={(e) => setHasOptions(e.target.checked)}
+              />
+              <span className="text-sm">Include option years</span>
+            </label>
           </div>
 
-          {/* Notes */}
+          {hasOptions && (
+            <>
+              <Labeled label="Number of option years">
+                <input
+                  type="number"
+                  min={0}
+                  value={optionYears}
+                  onChange={(e) => setOptionYears(Number(e.target.value))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                />
+              </Labeled>
+              <div />
+              <Labeled label="Option increase type">
+                <select
+                  value={optIncType}
+                  onChange={(e) => setOptIncType(e.target.value as "flat" | "percent")}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                >
+                  <option value="percent">% increase each option year</option>
+                  <option value="flat">Flat $ increase each option year</option>
+                </select>
+              </Labeled>
+              <Labeled label="Option increase value">
+                {optIncType === "percent" ? (
+                  <div className="flex items-center">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={optIncValue}
+                      onChange={(e) => setOptIncValue(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    />
+                    <span className="ml-2 text-slate-500">%</span>
+                  </div>
+                ) : (
+                  <CurrencyInput value={optIncValue} onChange={setOptIncValue} />
+                )}
+              </Labeled>
+            </>
+          )}
+
+          {/* Notes + Status */}
           <Labeled label="Notes (optional)">
             <input
               value={notes}
@@ -441,8 +572,6 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </Labeled>
-
-          {/* Status */}
           <Labeled label="Status">
             <select
               value={status}
@@ -454,6 +583,36 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
               <option value="pending">Pending</option>
             </select>
           </Labeled>
+
+          {/* Live schedule table */}
+          <div className="md:col-span-2">
+            <div className="mt-4 mb-2 text-sm font-semibold">Year-by-Year Rent Schedule</div>
+            <div className="overflow-x-auto border border-slate-200 rounded-lg">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <Th className="w-32">Period</Th>
+                    <Th className="text-right w-40">Monthly rent</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedule.map((row) => (
+                    <tr key={row.yearIndex} className="border-t border-slate-100">
+                      <Td>{row.label}</Td>
+                      <Td className="text-right">${row.monthly.toFixed(2)}</Td>
+                    </tr>
+                  ))}
+                  {schedule.length === 0 && (
+                    <tr>
+                      <Td colSpan={2} className="text-center text-slate-500">
+                        Enter rent and dates to preview the schedule.
+                      </Td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
 
         <div className="p-4 border-t border-slate-200 flex justify-between">
@@ -480,7 +639,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
   );
 }
 
-/** ---------- labeled wrapper + currency input ---------- */
+/* ---------------------- labeled wrapper & currency input --------------------- */
 function Labeled({
   label,
   hint,
