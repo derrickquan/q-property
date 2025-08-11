@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Property, Tenant, Lease, LateFeeType, LeaseStatus } from "../lib/types";
 import { load, save } from "../lib/storage";
 
-/** ---------- table cells (typed so colSpan/title work) ---------- */
+/** ---------- small table cells (typed so colSpan/title work) ---------- */
 function Th(props: React.ThHTMLAttributes<HTMLTableCellElement>) {
   const { className = "", ...rest } = props;
   return (
@@ -19,7 +19,7 @@ function Td(props: React.TdHTMLAttributes<HTMLTableCellElement>) {
   return <td className={`p-3 align-middle ${className}`} {...rest} />;
 }
 
-/** ---------- keys ---------- */
+/** ---------- storage keys ---------- */
 const K_PROPERTIES = "properties";
 const K_TENANTS = "tenants";
 const K_LEASES = "leases";
@@ -27,10 +27,10 @@ const K_LEASES = "leases";
 /** ---------- helpers ---------- */
 function tenantDisplay(t?: Tenant): string {
   if (!t) return "—";
-  const fromFull = (t.fullName || "").trim();
-  if (fromFull) return fromFull;
-  const parts = [t.firstName, t.lastName].filter(Boolean).join(" ").trim();
-  if (parts) return parts;
+  const full = (t.fullName || "").trim();
+  if (full) return full;
+  const combo = [t.firstName, t.lastName].filter(Boolean).join(" ").trim();
+  if (combo) return combo;
   if (t.email?.trim()) return t.email.trim();
   if (t.phone?.trim()) return t.phone.trim();
   return "(unnamed)";
@@ -54,7 +54,7 @@ function sanitizeMoney(s: string): string {
   const [l = "0", r = ""] = cleaned.split(".");
   const left = `${Number(l)}`;
   const right = r.slice(0, 2);
-  return right ? `${left}.${right}` : `${left}.00`.replace(/\.00$/, "");
+  return right ? `${left}.${right}` : left;
 }
 function parseCurrency(s: string): number {
   const n = Number(s.replace(/[^0-9.]/g, ""));
@@ -72,9 +72,61 @@ export default function LeasesPage() {
   const [leases, setLeases] = useState<Lease[]>([]);
   const [showCreate, setShowCreate] = useState(false);
 
+  // Seed fallback data here if storage is empty so dropdowns are never blank.
   useEffect(() => {
-    setProperties(load<Property[]>(K_PROPERTIES, []));
-    setTenants(load<Tenant[]>(K_TENANTS, []));
+    // PROPERTIES
+    const storedProps = load<Property[]>(K_PROPERTIES, []);
+    if (storedProps.length === 0) {
+      const seededProps: Property[] = [
+        {
+          id: "mock_prop_1",
+          name: "Maplewood Apartments",
+          address1: "110 Maple St, #A",
+          city: "Los Angeles",
+          state: "CA",
+          unitCount: 12,
+          type: "residential" as any,
+        },
+        {
+          id: "mock_prop_2",
+          name: "Sunset Plaza Retail",
+          address1: "88 Sunset Blvd",
+          city: "Los Angeles",
+          state: "CA",
+          unitCount: 3,
+          type: "commercial" as any,
+        },
+        {
+          id: "mock_prop_3",
+          name: "Cedar Fourplex",
+          address1: "33 Cedar Ave",
+          city: "Burbank",
+          state: "CA",
+          unitCount: 4,
+          type: "residential" as any,
+        },
+      ];
+      setProperties(seededProps);
+      save(K_PROPERTIES, seededProps);
+    } else {
+      setProperties(storedProps);
+    }
+
+    // TENANTS
+    const storedTenants = load<Tenant[]>(K_TENANTS, []);
+    if (storedTenants.length === 0) {
+      const seededTenants: Tenant[] = [
+        { id: "mock_t_1", firstName: "Alex", lastName: "Nguyen", email: "alex@example.com" } as Tenant,
+        { id: "mock_t_2", firstName: "Brianna", lastName: "Lopez", phone: "555-201-4455" } as Tenant,
+        { id: "mock_t_3", fullName: "Chris Patel" } as Tenant,
+      ];
+      setTenants(seededTenants);
+      save(K_TENANTS, seededTenants);
+    } else {
+      setTenants(storedTenants);
+    }
+
+    // LEASES (leave as-is; we don’t auto-seed leases)
     setLeases(load<Lease[]>(K_LEASES, []));
   }, []);
 
@@ -188,7 +240,6 @@ type CreateProps = {
 };
 
 function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProps) {
-  // form state
   const [tenantId, setTenantId] = useState("");
   const [propertyId, setPropertyId] = useState("");
   const [monthlyRent, setMonthlyRent] = useState<string>("0.00");
@@ -241,7 +292,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
     onCreate(lease);
   }
 
-  // no backdrop-click close
+  // No backdrop-click close.
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/40">
       <div className="max-w-3xl w-[880px] bg-white rounded-2xl shadow-xl border border-slate-200">
@@ -329,7 +380,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
             />
           </Labeled>
 
-          {/* Grace + Late fee */}
+          {/* Grace + Late fee (kept on same row via grid) */}
           <Labeled
             label="Grace period (days)"
             hint="Extra days after the due date before the rent is considered late."
@@ -429,7 +480,7 @@ function CreateLeaseModal({ properties, tenants, onClose, onCreate }: CreateProp
   );
 }
 
-/** ---------- small UI bits ---------- */
+/** ---------- labeled wrapper + currency input ---------- */
 function Labeled({
   label,
   hint,
