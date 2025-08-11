@@ -20,49 +20,43 @@ function fullName(t?: Tenant | null): string {
 
 function seedIfEmpty() {
   // Seed properties (3 mocks) if none found
-  const props = load<Property[]>("properties", []);
-  if (!props || props.length === 0) {
-    const seeded: Property[] = [
-      {
-        id: "mock1",
-        name: "Maplewood Apartments",
-        address1: "1234 Elm Street",
-        city: "Los Angeles",
-        state: "CA",
-        zip: "90001",
-        unitCount: 12,
-        type: "residential",
-        notes: "Sample data",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      },
-      {
-        id: "mock2",
-        name: "Sunset Plaza Retail",
-        address1: "89 Sunset Blvd",
-        city: "West Hollywood",
-        state: "CA",
-        zip: "90069",
-        unitCount: 3,
-        type: "commercial",
-        notes: "Sample data",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      },
-      {
-        id: "mock3",
-        name: "Cedar Fourplex",
-        address1: "22 Cedar Ave",
-        city: "Pasadena",
-        state: "CA",
-        zip: "91101",
-        unitCount: 4,
-        type: "residential",
-        notes: "Sample data",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      },
-    ];
+
+const mockProperties: Property[] = [
+  {
+    id: "mock-p1",
+    name: "Maplewood Apartments",
+    address1: "110 Maple St, #A",
+    city: "Los Angeles",
+    state: "CA",
+    zip: "90012",
+    unitCount: 12,
+    type: "residential",
+    notes: "Sample data",
+  },
+  {
+    id: "mock-p2",
+    name: "Sunset Plaza Retail",
+    address1: "200 Sunset Blvd",
+    city: "Los Angeles",
+    state: "CA",
+    zip: "90028",
+    unitCount: 3,
+    type: "commercial",
+    notes: "Sample data",
+  },
+  {
+    id: "mock-p3",
+    name: "Cedar Fourplex",
+    address1: "15 Cedar Ave",
+    city: "Pasadena",
+    state: "CA",
+    zip: "91101",
+    unitCount: 4,
+    type: "residential",
+    notes: "Sample data",
+  },
+];
+  
     save("properties", seeded);
   }
 
