@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { load, save } from "../lib/storage";
 
-/* ===================== Minimal types ===================== */
+/* ========== Types ========== */
 type ID = string;
 type UnitType = "residential" | "commercial";
 type LeaseStatus = "active" | "ended" | "pending";
@@ -56,11 +56,10 @@ type Lease = {
 
   notes?: string;
   status: LeaseStatus;
-
-  locked?: boolean; // when true, must unlock before editing
+  locked?: boolean;
 };
 
-/* ===================== Demo fallbacks ===================== */
+/* ========== Demo data fallbacks ========== */
 const DEMO_PROPERTIES: Property[] = [
   { id: "mock1", name: "Maplewood Apartments", city: "Los Angeles", state: "CA", unitCount: 12, type: "residential" },
   { id: "mock2", name: "Sunset Plaza Retail", city: "San Diego", state: "CA", unitCount: 3, type: "commercial" },
@@ -75,10 +74,9 @@ const DEMO_TENANTS: Tenant[] = [
   { id: "t5", firstName: "Rhea", lastName: "Singh", email: "rhea@example.com" },
 ];
 
-/* ===================== Helpers ===================== */
+/* ========== Helpers ========== */
 const moneyToCents = (v: string | number) => {
-  const n =
-    typeof v === "number" ? v : parseFloat((v || "0").toString().replace(/[^\d.]/g, ""));
+  const n = typeof v === "number" ? v : parseFloat((v || "0").toString().replace(/[^\d.]/g, ""));
   return Math.round((isNaN(n) ? 0 : n) * 100);
 };
 const centsToMoney = (cents: number) =>
@@ -96,7 +94,6 @@ const pickTenantName = (t?: Tenant) => {
   }
   return "—";
 };
-
 const pickPropertyLabel = (p?: Property) =>
   p ? `${p.name}${p.city ? ` — ${p.city}${p.state ? `, ${p.state}` : ""}` : ""}` : "—";
 
@@ -108,8 +105,7 @@ const yearsBetween = (startISO: string, endISO?: string) => {
   if (isNaN(s.getTime()) || isNaN(e.getTime()) || e <= s) return 1;
   let years = e.getFullYear() - s.getFullYear();
   const afterAnniversary =
-    e.getMonth() > s.getMonth() ||
-    (e.getMonth() === s.getMonth() && e.getDate() >= s.getDate());
+    e.getMonth() > s.getMonth() || (e.getMonth() === s.getMonth() && e.getDate() >= s.getDate());
   return years + (afterAnniversary ? 1 : 0);
 };
 const addYear = (d: Date, n: number) => {
@@ -120,7 +116,7 @@ const addYear = (d: Date, n: number) => {
 const inc = (base: number, mode: "flat" | "percent", value: number) =>
   mode === "flat" ? base + value : Math.round(base * (1 + value / 100));
 
-/* ===================== Components ===================== */
+/* ========== Page ========== */
 export default function LeasesPage() {
   const [leases, setLeases] = useState<Lease[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -134,19 +130,23 @@ export default function LeasesPage() {
     const ps = load<Property[]>("properties", []);
     const ls = load<Lease[]>("leases", []);
 
-    setTenants(ts.length ? ts : DEMO_TENANTS);
-    setProperties(ps.length ? ps : DEMO_PROPERTIES);
+    const tData = ts.length ? ts : DEMO_TENANTS;
+    const pData = ps.length ? ps : DEMO_PROPERTIES;
+
+    setTenants(tData);
+    setProperties(pData);
 
     if (ls.length) {
       setLeases(ls);
       return;
     }
 
-    // Seed a default lease for Elliot (with options) if none exist
+    // Seed a default lease for Elliot Nguyen
     const elliot =
-      (ts.find(t => (t.firstName?.toLowerCase() === "elliot") && (t.lastName?.toLowerCase() === "nguyen")) ??
-       DEMO_TENANTS.find(t => t.email === "elliot@example.com")) || DEMO_TENANTS[3];
-    const prop = (ps[0] ?? DEMO_PROPERTIES[0]);
+      tData.find(
+        t => t.firstName?.toLowerCase() === "elliot" && t.lastName?.toLowerCase() === "nguyen"
+      ) || tData[3];
+    const prop = pData[0];
 
     const seeded: Lease = {
       id: "seed_elliot",
@@ -156,20 +156,16 @@ export default function LeasesPage() {
       dueDay: 1,
       startDate: new Date().toISOString().slice(0, 10),
       endDate: addYear(new Date(), 2).toISOString().slice(0, 10),
-
       securityDepositCents: moneyToCents(5000),
       graceDays: 3,
       lateFeeMode: "flat",
       lateFeeValue: moneyToCents(50),
-
       annualMode: "percent",
       annualValue: 3,
-
       withOptions: true,
       optionYears: 2,
       optionIncreaseMode: "percent",
       optionIncreaseValue: 3,
-
       notes: "Seeded example lease with option years.",
       status: "active",
       locked: true,
@@ -184,6 +180,7 @@ export default function LeasesPage() {
     tenants.forEach(t => m.set(t.id, t));
     return m;
   }, [tenants]);
+
   const byProperty = useMemo(() => {
     const m = new Map<ID, Property>();
     properties.forEach(p => m.set(p.id, p));
@@ -201,9 +198,6 @@ export default function LeasesPage() {
         .sort((a, b) => a.tenantName.localeCompare(b.tenantName)),
     [leases, byTenant, byProperty]
   );
-
-  const openDetails = (l: Lease) => setDetailLease(l);
-  const closeDetails = () => setDetailLease(null);
 
   const handleCreate = (newLease: Lease) => {
     const next = [...leases, newLease];
@@ -265,11 +259,11 @@ export default function LeasesPage() {
                   </td>
                 </tr>
               )}
-              {rows.map((r) => (
+              {rows.map(r => (
                 <tr
                   key={r.id}
                   className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
-                  onClick={() => openDetails(r)}
+                  onClick={() => setDetailLease(r)}
                 >
                   <td className="p-3">{r.tenantName}</td>
                   <td className="p-3">{r.propertyLabel}</td>
@@ -299,7 +293,7 @@ export default function LeasesPage() {
           lease={detailLease}
           tenant={byTenant.get(detailLease.tenantId)}
           property={byProperty.get(detailLease.propertyId)}
-          onClose={closeDetails}
+          onClose={() => setDetailLease(null)}
           onSave={handleUpdate}
         />
       )}
@@ -307,7 +301,7 @@ export default function LeasesPage() {
   );
 }
 
-/* ===================== Add Lease Modal (basic) ===================== */
+/* ========== Add Lease Modal ========== */
 function AddLeaseModal({
   tenants,
   properties,
@@ -343,7 +337,17 @@ function AddLeaseModal({
   const [notes, setNotes] = useState("");
   const [status, setStatus] = useState<LeaseStatus>("active");
 
-  const canCreate = tenantId && propertyId && moneyToCents(monthlyRent) > 0 && dueDay >= 1 && dueDay <= 28;
+  const canCreate =
+    tenantId && propertyId && moneyToCents(monthlyRent) > 0 && dueDay >= 1 && dueDay <= 28;
+
+  const sortedTenants = useMemo(
+    () => tenants.slice().sort((a, b) => pickTenantName(a).localeCompare(pickTenantName(b))),
+    [tenants]
+  );
+  const sortedProps = useMemo(
+    () => properties.slice().sort((a, b) => pickPropertyLabel(a).localeCompare(pickPropertyLabel(b))),
+    [properties]
+  );
 
   const create = () => {
     if (!canCreate) return;
@@ -371,19 +375,10 @@ function AddLeaseModal({
         : undefined,
       notes: notes || undefined,
       status,
-      locked: true, // newly created leases start locked
+      locked: true,
     };
     onCreate(lease);
   };
-
-  const sortedTenants = useMemo(
-    () => tenants.slice().sort((a, b) => pickTenantName(a).localeCompare(pickTenantName(b))),
-    [tenants]
-  );
-  const sortedProps = useMemo(
-    () => properties.slice().sort((a, b) => pickPropertyLabel(a).localeCompare(pickPropertyLabel(b))),
-    [properties]
-  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -399,7 +394,11 @@ function AddLeaseModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Tenant</label>
-              <select className="w-full rounded border-slate-300" value={tenantId} onChange={e => setTenantId(e.target.value)}>
+              <select
+                className="w-full rounded border-slate-300"
+                value={tenantId}
+                onChange={e => setTenantId(e.target.value)}
+              >
                 <option value="">— Select tenant —</option>
                 {sortedTenants.map(t => (
                   <option key={t.id} value={t.id}>{pickTenantName(t)}</option>
@@ -408,7 +407,11 @@ function AddLeaseModal({
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Property</label>
-              <select className="w-full rounded border-slate-300" value={propertyId} onChange={e => setPropertyId(e.target.value)}>
+              <select
+                className="w-full rounded border-slate-300"
+                value={propertyId}
+                onChange={e => setPropertyId(e.target.value)}
+              >
                 <option value="">— Select property —</option>
                 {sortedProps.map(p => (
                   <option key={p.id} value={p.id}>{pickPropertyLabel(p)}</option>
@@ -423,18 +426,33 @@ function AddLeaseModal({
               <label className="block text-sm font-medium mb-1">Monthly rent</label>
               <div className="flex">
                 <span className="inline-flex items-center px-2 rounded-l border border-r-0 border-slate-300 text-slate-500">$</span>
-                <input className="w-full rounded-r border-slate-300" value={monthlyRent} onChange={e => setMonthlyRent(e.target.value)} />
+                <input
+                  className="w-full rounded-r border-slate-300"
+                  value={monthlyRent}
+                  onChange={e => setMonthlyRent(e.target.value)}
+                />
               </div>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Due day (1–28)</label>
-              <input type="number" min={1} max={28} className="w-full rounded border-slate-300" value={dueDay} onChange={e => setDueDay(parseInt(e.target.value || "1", 10))} />
+              <input
+                type="number"
+                min={1}
+                max={28}
+                className="w-full rounded border-slate-300"
+                value={dueDay}
+                onChange={e => setDueDay(parseInt(e.target.value || "1", 10))}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Security deposit</label>
               <div className="flex">
                 <span className="inline-flex items-center px-2 rounded-l border border-r-0 border-slate-300 text-slate-500">$</span>
-                <input className="w-full rounded-r border-slate-300" value={securityDeposit} onChange={e => setSecurityDeposit(e.target.value)} />
+                <input
+                  className="w-full rounded-r border-slate-300"
+                  value={securityDeposit}
+                  onChange={e => setSecurityDeposit(e.target.value)}
+                />
               </div>
             </div>
           </div>
@@ -443,11 +461,21 @@ function AddLeaseModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <div>
               <label className="block text-sm font-medium mb-1">Start date</label>
-              <input type="date" className="w-full rounded border-slate-300" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              <input
+                type="date"
+                className="w-full rounded border-slate-300"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">End date (optional)</label>
-              <input type="date" className="w-full rounded border-slate-300" value={endDate} onChange={e => setEndDate(e.target.value)} />
+              <input
+                type="date"
+                className="w-full rounded border-slate-300"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+              />
             </div>
           </div>
 
@@ -455,13 +483,25 @@ function AddLeaseModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <div>
               <label className="block text-sm font-medium mb-1">Grace period (days)</label>
-              <input type="number" className="w-full rounded border-slate-300" min={0} value={graceDays} onChange={e => setGraceDays(Math.max(0, parseInt(e.target.value || "0", 10)))} />
-              <p className="text-xs text-slate-500 mt-1">Extra days after the due date before rent is considered late.</p>
+              <input
+                type="number"
+                className="w-full rounded border-slate-300"
+                min={0}
+                value={graceDays}
+                onChange={e => setGraceDays(Math.max(0, parseInt(e.target.value || "0", 10)))}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Extra days after the due date before rent is considered late.
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium mb-1">Late fee type</label>
-                <select className="w-full rounded border-slate-300" value={lateFeeMode} onChange={e => setLateFeeMode(e.target.value as any)}>
+                <select
+                  className="w-full rounded border-slate-300"
+                  value={lateFeeMode}
+                  onChange={e => setLateFeeMode(e.target.value as any)}
+                >
                   <option value="flat">Flat $</option>
                   <option value="percent">Percent %</option>
                 </select>
@@ -469,20 +509,30 @@ function AddLeaseModal({
               <div>
                 <label className="block text-sm font-medium mb-1">Late fee value</label>
                 <div className="flex">
-                  <span className="inline-flex items-center px-2 rounded-l border border-r-0 border-slate-300 text-slate-500">{lateFeeMode === "flat" ? "$" : "%"}</span>
-                  <input className="w-full rounded-r border-slate-300" value={lateFeeValue} onChange={e => setLateFeeValue(e.target.value)} />
+                  <span className="inline-flex items-center px-2 rounded-l border border-r-0 border-slate-300 text-slate-500">
+                    {lateFeeMode === "flat" ? "$" : "%"}
+                  </span>
+                  <input
+                    className="w-full rounded-r border-slate-300"
+                    value={lateFeeValue}
+                    onChange={e => setLateFeeValue(e.target.value)}
+                  />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* annual/option */}
+          {/* annual + options */}
           <div className="mt-6">
             <h3 className="text-sm font-semibold mb-2">Annual increase (base term)</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Type</label>
-                <select className="w-full rounded border-slate-300" value={annualMode} onChange={e => setAnnualMode(e.target.value as any)}>
+                <select
+                  className="w-full rounded border-slate-300"
+                  value={annualMode}
+                  onChange={e => setAnnualMode(e.target.value as any)}
+                >
                   <option value="percent">Percent %</option>
                   <option value="flat">Flat $</option>
                 </select>
@@ -490,8 +540,14 @@ function AddLeaseModal({
               <div>
                 <label className="block text-sm font-medium mb-1">Value</label>
                 <div className="flex">
-                  <span className="inline-flex items-center px-2 rounded-l border border-r-0 border-slate-300 text-slate-500">{annualMode === "flat" ? "$" : "%"}</span>
-                  <input className="w-full rounded-r border-slate-300" value={annualValue} onChange={e => setAnnualValue(e.target.value)} />
+                  <span className="inline-flex items-center px-2 rounded-l border border-r-0 border-slate-300 text-slate-500">
+                    {annualMode === "flat" ? "$" : "%"}
+                  </span>
+                  <input
+                    className="w-full rounded-r border-slate-300"
+                    value={annualValue}
+                    onChange={e => setAnnualValue(e.target.value)}
+                  />
                 </div>
               </div>
             </div>
@@ -499,18 +555,32 @@ function AddLeaseModal({
 
           <div className="mt-6 border-t pt-4">
             <label className="inline-flex items-center gap-2">
-              <input type="checkbox" checked={withOptions} onChange={e => setWithOptions(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={withOptions}
+                onChange={e => setWithOptions(e.target.checked)}
+              />
               <span className="text-sm font-medium">Include option years</span>
             </label>
             {withOptions && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
                 <div>
                   <label className="block text-sm font-medium mb-1"># of option years</label>
-                  <input type="number" min={1} className="w-full rounded border-slate-300" value={optionYears} onChange={e => setOptionYears(Math.max(0, parseInt(e.target.value || "0", 10)))} />
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full rounded border-slate-300"
+                    value={optionYears}
+                    onChange={e => setOptionYears(Math.max(0, parseInt(e.target.value || "0", 10)))}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Option type</label>
-                  <select className="w-full rounded border-slate-300" value={optionMode} onChange={e => setOptionMode(e.target.value as any)}>
+                  <select
+                    className="w-full rounded border-slate-300"
+                    value={optionMode}
+                    onChange={e => setOptionMode(e.target.value as any)}
+                  >
                     <option value="percent">Percent %</option>
                     <option value="flat">Flat $</option>
                   </select>
@@ -518,8 +588,14 @@ function AddLeaseModal({
                 <div>
                   <label className="block text-sm font-medium mb-1">Option value</label>
                   <div className="flex">
-                    <span className="inline-flex items-center px-2 rounded-l border border-r-0 border-slate-300 text-slate-500">{optionMode === "flat" ? "$" : "%"}</span>
-                    <input className="w-full rounded-r border-slate-300" value={optionValue} onChange={e => setOptionValue(e.target.value)} />
+                    <span className="inline-flex items-center px-2 rounded-l border border-r-0 border-slate-300 text-slate-500">
+                      {optionMode === "flat" ? "$" : "%"}
+                    </span>
+                    <input
+                      className="w-full rounded-r border-slate-300"
+                      value={optionValue}
+                      onChange={e => setOptionValue(e.target.value)}
+                    />
                   </div>
                 </div>
               </div>
@@ -529,11 +605,19 @@ function AddLeaseModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
             <div>
               <label className="block text-sm font-medium mb-1">Notes (optional)</label>
-              <input className="w-full rounded border-slate-300" value={notes} onChange={e => setNotes(e.target.value)} />
+              <input
+                className="w-full rounded border-slate-300"
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Status</label>
-              <select className="w-full rounded border-slate-300" value={status} onChange={e => setStatus(e.target.value as LeaseStatus)}>
+              <select
+                className="w-full rounded border-slate-300"
+                value={status}
+                onChange={e => setStatus(e.target.value as LeaseStatus)}
+              >
                 <option value="active">Active</option>
                 <option value="pending">Pending</option>
                 <option value="ended">Ended</option>
@@ -543,11 +627,15 @@ function AddLeaseModal({
         </div>
 
         <div className="flex justify-end gap-2 p-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 rounded bg-slate-100 hover:bg-slate-200">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 rounded bg-slate-100 hover:bg-slate-200">
+            Cancel
+          </button>
           <button
             onClick={create}
             disabled={!canCreate}
-            className={`px-4 py-2 rounded text-white ${canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-300"}`}
+            className={`px-4 py-2 rounded text-white ${
+              canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-300"
+            }`}
           >
             Create lease
           </button>
@@ -557,7 +645,7 @@ function AddLeaseModal({
   );
 }
 
-/* ===================== Lease Details (clickable row) ===================== */
+/* ========== Lease Details Modal ========== */
 function LeaseDetailsModal({
   lease,
   tenant,
@@ -579,14 +667,8 @@ function LeaseDetailsModal({
     setEdit(false);
   }, [lease.id]);
 
-  const toggleLock = () => {
-    const next = { ...local, locked: !local.locked };
-    setLocal(next);
-  };
-
   const canSave = edit && !local.locked;
 
-  // simple schedule preview
   const schedule = useMemo(() => {
     const items: { year: number; monthly: number }[] = [];
     const baseYears = yearsBetween(local.startDate, local.endDate);
@@ -605,7 +687,7 @@ function LeaseDetailsModal({
     return items;
   }, [local]);
 
-  const set = <K extends keyof Lease>(k: K, v: Lease[K]) => setLocal((p) => ({ ...p, [k]: v }));
+  const set = <K extends keyof Lease>(k: K, v: Lease[K]) => setLocal(p => ({ ...p, [k]: v }));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -624,11 +706,15 @@ function LeaseDetailsModal({
             <div className="px-2 py-1 rounded bg-slate-100 text-slate-700">
               <span className="font-medium">Property:</span> {pickPropertyLabel(property)}
             </div>
-            <div className={`px-2 py-1 rounded ${local.locked ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"}`}>
+            <div
+              className={`px-2 py-1 rounded ${
+                local.locked ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"
+              }`}
+            >
               {local.locked ? "Locked" : "Unlocked"}
             </div>
             <button
-              onClick={toggleLock}
+              onClick={() => set("locked", !local.locked)}
               className={`ml-auto px-3 py-1 rounded border ${
                 local.locked ? "border-amber-300 text-amber-700" : "border-emerald-300 text-emerald-700"
               }`}
@@ -636,20 +722,22 @@ function LeaseDetailsModal({
               {local.locked ? "Unlock" : "Lock"}
             </button>
             <button
-              onClick={() => setEdit((e) => !e)}
+              onClick={() => setEdit(e => !e)}
               disabled={local.locked}
-              className={`px-3 py-1 rounded ${local.locked ? "bg-slate-200 text-slate-500" : "bg-blue-600 text-white hover:bg-blue-700"}`}
+              className={`px-3 py-1 rounded ${
+                local.locked ? "bg-slate-200 text-slate-500" : "bg-blue-600 text-white hover:bg-blue-700"
+              }`}
             >
               {edit ? "Stop editing" : "Edit"}
             </button>
           </div>
 
-          {/* editable bits */}
+          {/* Editable core fields */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <FieldMoney
               label="Monthly rent"
               value={local.monthlyRentCents}
-              onChange={(c) => set("monthlyRentCents", c)}
+              onChange={c => set("monthlyRentCents", c)}
               disabled={!edit || local.locked}
             />
             <div>
@@ -661,52 +749,41 @@ function LeaseDetailsModal({
                 className="w-full rounded border-slate-300"
                 disabled={!edit || local.locked}
                 value={local.dueDay}
-                onChange={(e) => set("dueDay", Math.min(28, Math.max(1, parseInt(e.target.value || "1", 10))))}
+                onChange={e =>
+                  set("dueDay", Math.min(28, Math.max(1, parseInt(e.target.value || "1", 10))))
+                }
               />
             </div>
             <FieldMoney
               label="Security deposit"
               value={local.securityDepositCents}
-              onChange={(c) => set("securityDepositCents", c)}
+              onChange={c => set("securityDepositCents", c)}
               disabled={!edit || local.locked}
             />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Start date</label>
-              <input
-                type="date"
-                className="w-full rounded border-slate-300"
-                disabled={!edit || local.locked}
-                value={local.startDate}
-                onChange={(e) => set("startDate", e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">End date (optional)</label>
-              <input
-                type="date"
-                className="w-full rounded border-slate-300"
-                disabled={!edit || local.locked}
-                value={local.endDate || ""}
-                onChange={(e) => set("endDate", e.target.value || undefined)}
-              />
-            </div>
+            <FieldDate
+              label="Start date"
+              value={local.startDate}
+              onChange={v => set("startDate", v)}
+              disabled={!edit || local.locked}
+            />
+            <FieldDate
+              label="End date (optional)"
+              value={local.endDate || ""}
+              onChange={v => set("endDate", v || undefined)}
+              disabled={!edit || local.locked}
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Grace days</label>
-              <input
-                type="number"
-                min={0}
-                className="w-full rounded border-slate-300"
-                disabled={!edit || local.locked}
-                value={local.graceDays}
-                onChange={(e) => set("graceDays", Math.max(0, parseInt(e.target.value || "0", 10)))}
-              />
-            </div>
+            <FieldNumber
+              label="Grace days"
+              value={local.graceDays}
+              onChange={v => set("graceDays", Math.max(0, v))}
+              disabled={!edit || local.locked}
+            />
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium mb-1">Late fee type</label>
@@ -714,7 +791,7 @@ function LeaseDetailsModal({
                   className="w-full rounded border-slate-300"
                   disabled={!edit || local.locked}
                   value={local.lateFeeMode}
-                  onChange={(e) => set("lateFeeMode", e.target.value as any)}
+                  onChange={e => set("lateFeeMode", e.target.value as any)}
                 >
                   <option value="flat">Flat $</option>
                   <option value="percent">Percent %</option>
@@ -730,10 +807,12 @@ function LeaseDetailsModal({
                       ? (local.lateFeeValue / 100).toFixed(2)
                       : String(local.lateFeeValue)
                   }
-                  onChange={(e) =>
+                  onChange={e =>
                     set(
                       "lateFeeValue",
-                      local.lateFeeMode === "flat" ? moneyToCents(e.target.value) : parseFloat(e.target.value || "0")
+                      local.lateFeeMode === "flat"
+                        ? moneyToCents(e.target.value)
+                        : parseFloat(e.target.value || "0")
                     )
                   }
                 />
@@ -748,7 +827,7 @@ function LeaseDetailsModal({
                 className="w-full rounded border-slate-300"
                 disabled={!edit || local.locked}
                 value={local.annualMode}
-                onChange={(e) => set("annualMode", e.target.value as any)}
+                onChange={e => set("annualMode", e.target.value as any)}
               >
                 <option value="percent">Percent %</option>
                 <option value="flat">Flat $</option>
@@ -761,4 +840,197 @@ function LeaseDetailsModal({
                 disabled={!edit || local.locked}
                 value={
                   local.annualMode === "flat"
-                    ? (local.annualValue / 100).to
+                    ? (local.annualValue / 100).toFixed(2)
+                    : String(local.annualValue)
+                }
+                onChange={e =>
+                  set(
+                    "annualValue",
+                    local.annualMode === "flat"
+                      ? moneyToCents(e.target.value)
+                      : parseFloat(e.target.value || "0")
+                  )
+                }
+              />
+            </div>
+            <div className="flex items-end">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  disabled={!edit || local.locked}
+                  checked={!!local.withOptions}
+                  onChange={e => set("withOptions", e.target.checked)}
+                />
+                <span className="text-sm font-medium">Include option years</span>
+              </label>
+            </div>
+          </div>
+
+          {local.withOptions && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <FieldNumber
+                label="# of option years"
+                value={local.optionYears || 0}
+                onChange={v => set("optionYears", v)}
+                disabled={!edit || local.locked}
+              />
+              <div>
+                <label className="block text-sm font-medium mb-1">Option type</label>
+                <select
+                  className="w-full rounded border-slate-300"
+                  disabled={!edit || local.locked}
+                  value={local.optionIncreaseMode || "percent"}
+                  onChange={e => set("optionIncreaseMode", e.target.value as any)}
+                >
+                  <option value="percent">Percent %</option>
+                  <option value="flat">Flat $</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Option value</label>
+                <input
+                  className="w-full rounded border-slate-300"
+                  disabled={!edit || local.locked}
+                  value={
+                    (local.optionIncreaseMode || "percent") === "flat"
+                      ? ((local.optionIncreaseValue || 0) / 100).toFixed(2)
+                      : String(local.optionIncreaseValue || 0)
+                  }
+                  onChange={e =>
+                    set(
+                      "optionIncreaseValue",
+                      (local.optionIncreaseMode || "percent") === "flat"
+                        ? moneyToCents(e.target.value)
+                        : parseFloat(e.target.value || "0")
+                    )
+                  }
+                />
+              </div>
+            </div>
+          )}
+
+          {/* schedule preview */}
+          <div className="border rounded-lg">
+            <div className="px-3 py-2 bg-slate-50 border-b text-sm font-medium">
+              Rent schedule preview
+            </div>
+            <div className="p-3 overflow-x-auto">
+              <table className="min-w-[320px] text-sm">
+                <thead>
+                  <tr className="text-left">
+                    {["Year", "Monthly rent"].map(h => (
+                      <th key={h} className="p-2">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedule.map(row => (
+                    <tr key={row.year} className="border-t">
+                      <td className="p-2">{row.year}</td>
+                      <td className="p-2">{centsToMoney(row.monthly)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 p-4 border-t">
+          <button onClick={onClose} className="px-4 py-2 rounded bg-slate-100 hover:bg-slate-200">
+            Close
+          </button>
+          <button
+            onClick={() => onSave(local)}
+            disabled={!canSave}
+            className={`px-4 py-2 rounded text-white ${
+              canSave ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-300"
+            }`}
+          >
+            Save changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ========== Small form helpers ========== */
+function FieldMoney({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: number;
+  onChange: (cents: number) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-1">{label}</label>
+      <div className="flex">
+        <span className="inline-flex items-center px-2 rounded-l border border-r-0 border-slate-300 text-slate-500">
+          $
+        </span>
+        <input
+          className="w-full rounded-r border-slate-300"
+          disabled={disabled}
+          value={(value / 100).toFixed(2)}
+          onChange={e => onChange(moneyToCents(e.target.value))}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FieldDate({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-1">{label}</label>
+      <input
+        type="date"
+        className="w-full rounded border-slate-300"
+        disabled={disabled}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+function FieldNumber({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-1">{label}</label>
+      <input
+        type="number"
+        className="w-full rounded border-slate-300"
+        disabled={disabled}
+        value={value}
+        onChange={e => onChange(parseInt(e.target.value || "0", 10))}
+      />
+    </div>
+  );
+}
