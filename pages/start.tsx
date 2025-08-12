@@ -1,105 +1,86 @@
-// pages/start.tsx
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 import Link from "next/link";
-import { ensureDefaultUser, signUp } from "../lib/auth";
+import { startFree, getUser } from "../lib/auth";
 
 export default function StartPage() {
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
+  const router = useRouter();
+  const [name, setName] = useState("John Smith");
+  const [email, setEmail] = useState("JohnSmith@gmail.com");
+  const [password, setPassword] = useState("123");
   const [busy, setBusy] = useState(false);
 
+  // If already logged in, skip
   useEffect(() => {
-    // make sure JohnSmith default exists
-    ensureDefaultUser();
-  }, []);
+    if (getUser()) router.replace("/properties");
+  }, [router]);
 
-  async function onSubmit(e: React.FormEvent) {
+  function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null);
-    setOk(null);
-    if (pw !== confirm) {
-      setErr("Passwords do not match.");
-      return;
-    }
+    setBusy(true);
     try {
-      setBusy(true);
-      await signUp(email, pw);
-      setOk("Account created! Redirecting to Properties…");
-      // tiny delay so user sees the message
-      setTimeout(() => {
-        window.location.href = "/properties";
-      }, 800);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to create account.");
+      startFree(name, email, password);
+      router.push("/properties");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <main className="max-w-md mx-auto px-4 py-10">
-      <h1 className="text-2xl font-semibold mb-6">Create your account</h1>
+    <main className="min-h-[70vh] grid place-items-center px-4">
+      <div className="w-full max-w-md rounded-xl border border-slate-200 shadow-sm p-6 bg-white">
+        <h1 className="text-xl font-semibold mb-2">Create your account</h1>
+        <p className="text-sm text-slate-600 mb-4">
+          This is a demo-only account stored in your browser.
+        </p>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <form className="space-y-4" onSubmit={onSubmit}>
+        <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium">Email</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Full name</label>
             <input
+              className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Jane Doe"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+            <input
+              className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
               type="email"
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              required
             />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium">Password</label>
-              <input
-                type="password"
-                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-                value={pw}
-                onChange={(e) => setPw(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Confirm password</label>
-              <input
-                type="password"
-                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                required
-              />
-            </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+            <input
+              className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="•••"
+            />
           </div>
 
-          {err && <div className="text-sm text-red-600">{err}</div>}
-          {ok && <div className="text-sm text-green-700">{ok}</div>}
-
-          <div className="flex items-center justify-between pt-2">
-            <button
-              type="submit"
-              disabled={busy}
-              className="px-4 py-2 rounded text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-            >
-              {busy ? "Creating…" : "Create account"}
-            </button>
-            <Link className="text-sm text-blue-600 hover:underline" href="/login">
-              I already have an account
-            </Link>
-          </div>
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full rounded bg-blue-600 text-white py-2 hover:bg-blue-700 disabled:opacity-60"
+          >
+            {busy ? "Creating…" : "Create account"}
+          </button>
         </form>
 
-        <div className="mt-6 p-3 rounded border border-slate-200 bg-slate-50 text-xs text-slate-600">
-          <div className="font-medium mb-1">Demo account (preloaded):</div>
-          <div>Email: <code>JohnSmith@gmail.com</code></div>
-          <div>Password: <code>123</code></div>
+        <div className="text-sm text-slate-600 mt-4">
+          Already have an account?{" "}
+          <Link href="/login" className="text-blue-600 hover:underline">
+            Log in
+          </Link>
         </div>
       </div>
     </main>
