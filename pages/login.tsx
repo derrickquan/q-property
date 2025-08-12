@@ -11,7 +11,7 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    ensureDefaultUser();           // make sure demo user exists
+    ensureDefaultUser(); // ensure the demo user exists
     if (getUser()) router.replace("/properties");
   }, [router]);
 
@@ -21,11 +21,11 @@ export default function LoginPage() {
     setBusy(true);
     try {
       const res = signIn(email.trim(), password);
-      if (!res.ok) {
-        setError(res.error ?? "Login failed");
-        return;
+      if (res.ok) {
+        router.push("/properties"); // NavBar updates via auth event
+      } else {
+        setError(res.error || "Login failed");
       }
-      router.push("/properties");  // NavBar updates via auth event
     } finally {
       setBusy(false);
     }
