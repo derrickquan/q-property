@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { login, getUser } from "../lib/auth";
+import { signIn, getUser, ensureDefaultUser } from "../lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -10,25 +10,22 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // If already logged in, go somewhere useful
   useEffect(() => {
-    if (getUser()) {
-      router.replace("/properties");
-    }
+    ensureDefaultUser();           // make sure demo user exists
+    if (getUser()) router.replace("/properties");
   }, [router]);
 
-  async function onSubmit(e: React.FormEvent) {
+  function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      const res = login(email.trim(), password);
+      const res = signIn(email.trim(), password);
       if (!res.ok) {
         setError(res.error ?? "Login failed");
         return;
       }
-      // success: NavBar will update via auth event. Send to properties.
-      router.push("/properties");
+      router.push("/properties");  // NavBar updates via auth event
     } finally {
       setBusy(false);
     }
@@ -39,7 +36,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-xl border border-slate-200 shadow-sm p-6 bg-white">
         <h1 className="text-xl font-semibold mb-2">Login</h1>
         <p className="text-sm text-slate-600 mb-4">
-          Demo account: <span className="font-medium">JohnSmith@gmail.com</span> / <span className="font-medium">123</span>
+          Demo: <span className="font-medium">JohnSmith@gmail.com</span> / <span className="font-medium">123</span>
         </p>
 
         {error && (
@@ -58,6 +55,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
+              required
             />
           </div>
 
@@ -70,6 +68,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="•••"
+              required
             />
           </div>
 
