@@ -1,29 +1,35 @@
 // components/NavBar.tsx
-import React, { useEffect, useState } from "react";
+import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { getUser, logout, onAuthEvent } from "../lib/auth";
-
-type User = ReturnType<typeof getUser>;
+import { getUser, logout, onAuthEvent, type AuthUser } from "../lib/auth";
 
 export default function NavBar() {
   const router = useRouter();
-  const [user, setUser] = useState<User>(getUser());
+  const [user, setUser] = React.useState<AuthUser | null>(null);
 
-  // Keep nav in sync with auth state
-  useEffect(() => {
+  // hydrate + keep in sync with auth events (login/logout/update)
+  React.useEffect(() => {
+    setUser(getUser());
     const off = onAuthEvent(() => setUser(getUser()));
-    return () => off();
+    return off;
   }, []);
 
   const loggedIn = !!user;
+
+  const displayName =
+    (user?.firstName || user?.lastName)
+      ? [user?.firstName, user?.lastName].filter(Boolean).join(" ")
+      : (user?.email ?? "");
+
+  const linkCls = (active: boolean) =>
+    active ? "font-semibold text-slate-900" : "text-slate-700 hover:text-slate-900";
 
   return (
     <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200">
       <div className="max-w-6xl mx-auto flex items-center justify-between py-3 px-4">
         {/* Brand */}
         <div className="flex items-center gap-2">
-          {/* tiny square mark */}
           <span className="inline-block h-2.5 w-2.5 rounded bg-blue-600" />
           <Link href={loggedIn ? "/properties" : "/"} className="font-semibold">
             Q Property
@@ -31,42 +37,27 @@ export default function NavBar() {
         </div>
 
         {/* Primary nav */}
-        <nav className="hidden md:flex items-center gap-6 text-slate-700">
-          {/* When LOGGED OUT -> show Home */}
+        <nav className="hidden md:flex items-center gap-6">
+          {/* Logged OUT: show Home */}
           {!loggedIn && (
-            <Link
-              href="/"
-              className={router.pathname === "/" ? "font-semibold text-slate-900" : "hover:text-slate-900"}
-            >
+            <Link href="/" className={linkCls(router.pathname === "/")}>
               Home
             </Link>
           )}
 
-          {/* When LOGGED IN -> show app sections */}
+          {/* Logged IN: show app sections */}
           {loggedIn && (
             <>
-              <Link
-                href="/properties"
-                className={router.pathname.startsWith("/properties") ? "font-semibold text-slate-900" : "hover:text-slate-900"}
-              >
+              <Link href="/properties" className={linkCls(router.pathname.startsWith("/properties"))}>
                 Properties
               </Link>
-              <Link
-                href="/tenants"
-                className={router.pathname.startsWith("/tenants") ? "font-semibold text-slate-900" : "hover:text-slate-900"}
-              >
+              <Link href="/tenants" className={linkCls(router.pathname.startsWith("/tenants"))}>
                 Tenants
               </Link>
-              <Link
-                href="/leases"
-                className={router.pathname.startsWith("/leases") ? "font-semibold text-slate-900" : "hover:text-slate-900"}
-              >
+              <Link href="/leases" className={linkCls(router.pathname.startsWith("/leases"))}>
                 Leases
               </Link>
-              <Link
-                href="/statements"
-                className={router.pathname.startsWith("/statements") ? "font-semibold text-slate-900" : "hover:text-slate-900"}
-              >
+              <Link href="/statements" className={linkCls(router.pathname.startsWith("/statements"))}>
                 Statements
               </Link>
             </>
@@ -75,7 +66,7 @@ export default function NavBar() {
 
         {/* Right actions */}
         <div className="flex items-center gap-2">
-          {/* Logged OUT: show Login + Start free */}
+          {/* Logged OUT: Login + Start free */}
           {!loggedIn && (
             <>
               <Link
@@ -93,17 +84,14 @@ export default function NavBar() {
             </>
           )}
 
-          {/* Logged IN: show user + Logout */}
+          {/* Logged IN: greeting + Logout */}
           {loggedIn && (
             <div className="flex items-center gap-3">
-              <div className="text-sm text-slate-600">
-                {user?.name ?? user?.email}
-              </div>
+              <div className="text-sm text-slate-600">{displayName}</div>
               <button
                 onClick={() => {
                   logout();
-                  // Kick to landing after logout
-                  router.push("/");
+                  router.push("/"); // return to landing after logout
                 }}
                 className="px-3 py-1.5 text-sm rounded border border-slate-300 hover:bg-slate-50"
               >
