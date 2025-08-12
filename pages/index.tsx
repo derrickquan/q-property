@@ -1,4 +1,19 @@
 // pages/index.tsx
+import React, { useEffect } from "react";
+import { useRouter } from "next/router";
+import { getUser } from "../lib/auth";
+
+// Your existing home content can stay below; we just redirect if logged in.
+export default function Home() {
+  const router = useRouter();
+
+  useEffect(() => {
+    if (getUser()) {
+      router.replace("/properties");
+    }
+  }, [router]);
+
+// pages/index.tsx
 import React from "react";
 import Link from "next/link";
 
@@ -105,5 +120,12 @@ function FeatureCard({ title, desc }: { title: string; desc: string }) {
       <div className="font-semibold">{title}</div>
       <div className="text-slate-600 text-sm mt-1">{desc}</div>
     </div>
+  );
+}
+
+    return (
+    <main className="min-h-screen bg-white text-slate-900">
+      {/* your hero/landing content */}
+    </main>
   );
 }
