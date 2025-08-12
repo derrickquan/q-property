@@ -1,85 +1,77 @@
 // lib/auth.ts
-// Tiny auth on top of lib/data.ts (localStorage today, backend-ready for later)
-
-import { db } from "./data";
-
-type ID = string;
-export type User = {
-  id: ID;
+export type AuthUser = {
+  name: string;
   email: string;
-  password: string; // plain in local demo only — replace with hash when backend added
-  createdAt: number;
 };
 
-const SESSION_KEY = "qprop:session";
+const KEY = "qp_user";
 
-// seed default user once
-export async function ensureDefaultUser() {
-  const users = await db.list<User>("users");
-  const exists = users.some(
-    u => u.email.toLowerCase() === "johnsmith@gmail.com"
-  );
-  if (!exists) {
-    await db.add<User>("users", {
-      email: "JohnSmith@gmail.com",
-      password: "123",
-      createdAt: Date.now(),
-    } as any);
-  }
-}
+// Seed a default user so you can log in immediately
+const DEFAULT = { name: "John Smith", email: "JohnSmith@gmail.com" } satisfies AuthUser;
 
-export async function signUp(email: string, password: string) {
-  email = email.trim();
-  if (!email || !password) throw new Error("Email and password are required.");
-  const users = await db.list<User>("users");
-  if (users.some(u => u.email.toLowerCase() === email.toLowerCase())) {
-    throw new Error("An account with this email already exists.");
-  }
-  const user = await db.add<User>("users", {
-    email,
-    password,
-    createdAt: Date.now(),
-  } as any);
-  setSession(user.id);
-  return user;
-}
-
-export async function signIn(email: string, password: string) {
-  const users = await db.list<User>("users");
-  const user = users.find(
-    u => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password
-  );
-  if (!user) throw new Error("Invalid email or password.");
-  setSession(user.id);
-  return user;
-}
-
-export function signOut() {
-  if (typeof window !== "undefined") {
-    window.localStorage.removeItem(SESSION_KEY);
-    window.dispatchEvent(new CustomEvent("db:update", { detail: { key: SESSION_KEY } }));
-  }
-}
-
-export async function currentUser(): Promise<User | null> {
-  const id = getSession();
-  if (!id) return null;
-  const u = await db.get<User>("users", id);
-  return u ?? null;
-}
-
-function setSession(userId: string) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(SESSION_KEY, JSON.stringify({ userId }));
-  window.dispatchEvent(new CustomEvent("db:update", { detail: { key: SESSION_KEY } }));
-}
-
-function getSession(): string | null {
-  if (typeof window === "undefined") return null;
+/** Get the current user (or null if logged out). */
+export function getUser(): AuthUser | null {
   try {
-    const raw = window.localStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw).userId as string) : null;
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(KEY) : null;
+    return raw ? (JSON.parse(raw) as AuthUser) : null;
   } catch {
     return null;
+  }
+}
+
+/** Is someone logged in? */
+export function isLoggedIn(): boolean {
+  return !!getUser();
+}
+
+/** Log in with a simple demo credential check. */
+export function login(email: string, password: string): { ok: boolean; error?: string } {
+  // Demo-only: a single user with a fixed password
+  if (email.toLowerCase() === DEFAULT.email.toLowerCase() && password === "123") {
+    window.localStorage.setItem(KEY, JSON.stringify(DEFAULT));
+    notifyAuthChange();
+    return { ok: true };
+  }
+  return { ok: false, error: "Invalid email or password" };
+}
+
+/** Create account (demo): always creates/overwrites the default user. */
+export function startFree(name: string, email: string, password: string): { ok: boolean } {
+  // Still a demo: we just store the provided name/email and accept any password.
+  const user: AuthUser = { name: name.trim() || "New User", email: email.trim() };
+  window.localStorage.setItem(KEY, JSON.stringify(user));
+  notifyAuthChange();
+  return { ok: true };
+}
+
+/** Log out. */
+export function logout(): void {
+  window.localStorage.removeItem(KEY);
+  notifyAuthChange();
+}
+
+/** Subscribe to auth changes (both storage events and same-tab changes). */
+export function onAuthChange(fn: () => void): () => void {
+  const storageHandler = (e: StorageEvent) => {
+    if (e.key === KEY) fn();
+  };
+  const customHandler = () => fn();
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", storageHandler);
+    window.addEventListener("qp-auth", customHandler as EventListener);
+  }
+  return () => {
+    if (typeof window !== "undefined") {
+      window.removeEventListener("storage", storageHandler);
+      window.removeEventListener("qp-auth", customHandler as EventListener);
+    }
+  };
+}
+
+/** Fire a same-tab event so components update immediately after login/logout. */
+function notifyAuthChange() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("qp-auth"));
   }
 }
