@@ -21,19 +21,19 @@ export default function StartPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
+
     const res = signUp({ email, password, firstName, lastName });
-    if (!res.ok) {
-      setError(res.error);
-      setBusy(false);
-      return;
-    }
-    // auto sign-in after sign-up (demo)
-    const loginRes = signIn(email, password);
-    if (loginRes.ok) {
-      router.push("/properties");
+    if (res.ok) {
+      const loginRes = signIn(email, password);
+      if (loginRes.ok) {
+        router.push("/properties");
+      } else {
+        setBusy(false);
+        setError("Signed up but auto-login failed.");
+      }
     } else {
       setBusy(false);
-      setError("Signed up but auto-login failed.");
+      setError(res.error || "Sign-up failed");
     }
   }
 
