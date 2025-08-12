@@ -1,78 +1,92 @@
-// pages/login.tsx
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { ensureDefaultUser, signIn } from "../lib/auth";
+import { useRouter } from "next/router";
+import { login, getUser } from "../lib/auth";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [err, setErr] = useState<string | null>(null);
+  const router = useRouter();
+  const [email, setEmail] = useState("JohnSmith@gmail.com"); // demo default
+  const [password, setPassword] = useState("123");            // demo default
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // If already logged in, go somewhere useful
   useEffect(() => {
-    ensureDefaultUser();
-  }, []);
+    if (getUser()) {
+      router.replace("/properties");
+    }
+  }, [router]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null);
+    setError(null);
+    setBusy(true);
     try {
-      setBusy(true);
-      await signIn(email, pw);
-      window.location.href = "/properties";
-    } catch (e: any) {
-      setErr(e?.message || "Sign-in failed.");
+      const res = login(email.trim(), password);
+      if (!res.ok) {
+        setError(res.error ?? "Login failed");
+        return;
+      }
+      // success: NavBar will update via auth event. Send to properties.
+      router.push("/properties");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <main className="max-w-md mx-auto px-4 py-10">
-      <h1 className="text-2xl font-semibold mb-6">Sign in</h1>
+    <main className="min-h-[70vh] grid place-items-center px-4">
+      <div className="w-full max-w-md rounded-xl border border-slate-200 shadow-sm p-6 bg-white">
+        <h1 className="text-xl font-semibold mb-2">Login</h1>
+        <p className="text-sm text-slate-600 mb-4">
+          Demo account: <span className="font-medium">JohnSmith@gmail.com</span> / <span className="font-medium">123</span>
+        </p>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <form className="space-y-4" onSubmit={onSubmit}>
+        {error && (
+          <div className="mb-4 rounded border border-red-200 bg-red-50 text-red-700 text-sm px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium">Email</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
             <input
+              className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
               type="email"
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              required
             />
           </div>
+
           <div>
-            <label className="block text-sm font-medium">Password</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
             <input
+              className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
               type="password"
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="•••"
             />
           </div>
 
-          {err && <div className="text-sm text-red-600">{err}</div>}
-
-          <div className="flex items-center justify-between pt-2">
-            <button
-              type="submit"
-              disabled={busy}
-              className="px-4 py-2 rounded text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-            >
-              {busy ? "Signing in…" : "Sign in"}
-            </button>
-            <Link className="text-sm text-blue-600 hover:underline" href="/start">
-              Create a new account
-            </Link>
-          </div>
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full rounded bg-blue-600 text-white py-2 hover:bg-blue-700 disabled:opacity-60"
+          >
+            {busy ? "Signing in…" : "Login"}
+          </button>
         </form>
 
-        <div className="mt-6 p-3 rounded border border-slate-200 bg-slate-50 text-xs text-slate-600">
-          Demo account: <code>JohnSmith@gmail.com</code> / <code>123</code>
+        <div className="text-sm text-slate-600 mt-4">
+          Don’t have an account?{" "}
+          <Link href="/start" className="text-blue-600 hover:underline">
+            Start free
+          </Link>
         </div>
       </div>
     </main>
